@@ -202,7 +202,7 @@ fun DevicesScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            HorizontalDivider()
+                            Divider()
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Row(
