@@ -73,7 +73,7 @@ router.post("/force-logout", authenticateToken, async (req: AuthRequest, res: Re
 
   try {
     const result = await pool.query(
-      "UPDATE devices SET status = 'offline', refresh_token = NULL WHERE id::text = $1::text AND owner_id::text = $2::text RETURNING id",
+      "UPDATE devices SET status = 'offline', refresh_token = NULL WHERE (id::text = $1::text OR device_id::text = $1::text) AND owner_id::text = $2::text RETURNING id",
       [deviceId, req.userId]
     );
 
@@ -100,7 +100,7 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
 
   try {
     const result = await pool.query(
-      "UPDATE devices SET device_name = $1 WHERE id::text = $2::text AND owner_id::text = $3::text RETURNING id, device_name",
+      "UPDATE devices SET device_name = $1, name = $1 WHERE (id::text = $2::text OR device_id::text = $2::text) AND owner_id::text = $3::text RETURNING id, device_name",
       [deviceName.trim(), id, req.userId]
     );
 
@@ -121,7 +121,7 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
   try {
     const result = await pool.query(
-      "DELETE FROM devices WHERE id::text = $1::text AND owner_id::text = $2::text RETURNING id",
+      "DELETE FROM devices WHERE (id::text = $1::text OR device_id::text = $1::text) AND owner_id::text = $2::text RETURNING id",
       [id, req.userId]
     );
 
