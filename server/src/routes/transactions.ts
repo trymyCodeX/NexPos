@@ -205,6 +205,14 @@ router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Respo
              WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
                AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
            )
+           OR EXISTS (
+             SELECT 1 FROM customers c
+             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
+           )
+           OR EXISTS (
+             SELECT 1 FROM services s
+             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
+           )
          )
        RETURNING *`,
       [normalizedStatus, id, String(req.userId), req.outletId ? String(req.outletId) : ""]
@@ -252,6 +260,14 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
              WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
                AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
            )
+           OR EXISTS (
+             SELECT 1 FROM customers c
+             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
+           )
+           OR EXISTS (
+             SELECT 1 FROM services s
+             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
+           )
          )
        RETURNING *`,
       [normalizedStatus, transactionId, String(req.userId), req.outletId ? String(req.outletId) : ""]
@@ -285,6 +301,14 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
            OR t.outlet_id::text = $3::text
            OR o.id::text = $3::text
            OR o.client_id::text = $3::text
+           OR EXISTS (
+             SELECT 1 FROM customers c
+             WHERE t.customer_id::text = c.id::text AND c.owner_id::text = $2::text
+           )
+           OR EXISTS (
+             SELECT 1 FROM services s
+             WHERE t.service_id::text = s.id::text AND s.owner_id::text = $2::text
+           )
          )`,
       [id, String(req.userId), req.outletId ? String(req.outletId) : ""]
     );
