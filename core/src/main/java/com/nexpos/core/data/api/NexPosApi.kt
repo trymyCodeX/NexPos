@@ -76,14 +76,14 @@ interface NexPosApi {
     @PUT("/api/devices/{id}")
     suspend fun updateDevice(
         @Header("Authorization") token: String,
-        @Path("id") deviceId: Int,
+        @Path("id") deviceId: String,
         @Body request: UpdateDeviceRequest
     ): Response<MessageResponse>
 
     @DELETE("/api/devices/{id}")
     suspend fun deleteDevice(
         @Header("Authorization") token: String,
-        @Path("id") deviceId: Int
+        @Path("id") deviceId: String
     ): Response<MessageResponse>
 
     @GET("/api/transactions")
