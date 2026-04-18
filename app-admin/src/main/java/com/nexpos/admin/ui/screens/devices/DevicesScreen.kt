@@ -46,7 +46,7 @@ fun DevicesScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.forceLogout(device.id)
+                        viewModel.forceLogout(device)
                         deviceToLogout = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -67,7 +67,7 @@ fun DevicesScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteDevice(device.id)
+                        viewModel.deleteDevice(device)
                         deviceToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -96,7 +96,7 @@ fun DevicesScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.updateDevice(device.id, editName)
+                        viewModel.updateDevice(device, editName)
                         deviceToEdit = null
                     },
                     enabled = editName.isNotBlank()
