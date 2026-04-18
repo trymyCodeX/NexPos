@@ -9,7 +9,8 @@ data class HeartbeatRequest(
 )
 
 data class ForceLogoutRequest(
-    val deviceId: String
+    val deviceId: String,
+    val id: String = ""
 )
 
 data class UpdateDeviceRequest(

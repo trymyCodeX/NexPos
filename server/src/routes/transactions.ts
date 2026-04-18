@@ -175,63 +175,7 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 });
 
-// PUT /transactions/:id/status - ubah status transaksi
-router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { status } = req.body;
-  const normalizedStatus = normalizeStatus(status);
-
-  if (!status) {
-    res.status(400).json({ message: "Status wajib diisi" });
-    return;
-  }
-
-  if (!normalizedStatus) {
-    res.status(400).json({
-      message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}`,
-    });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `UPDATE transactions SET status = $1::text, updated_at = NOW()
-       WHERE id::text = $2::text
-         AND (
-           owner_id::text = $3::text
-           OR outlet_id::text = $4::text
-           OR EXISTS (
-             SELECT 1 FROM outlets o
-             WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
-               AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
-           )
-           OR EXISTS (
-             SELECT 1 FROM customers c
-             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
-           )
-           OR EXISTS (
-             SELECT 1 FROM services s
-             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
-           )
-         )
-       RETURNING *`,
-      [normalizedStatus, id, String(req.userId), req.outletId ? String(req.outletId) : ""]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(404).json({ message: "Transaksi tidak ditemukan" });
-      return;
-    }
-
-    const transaction = toTransactionPayload(result.rows[0]);
-    res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Terjadi kesalahan server" });
-  }
-});
-
-// PUT /transactions/status (legacy support)
+// PUT /transactions/status (legacy support) - HARUS sebelum /:id/status agar tidak tertimpa wildcard /:id
 router.put("/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { transactionId, status } = req.body;
   const normalizedStatus = normalizeStatus(status);
@@ -247,6 +191,8 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
     });
     return;
   }
+
+  const outletIdStr = req.outletId ? String(req.outletId) : "";
 
   try {
     const result = await pool.query(
@@ -270,7 +216,65 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
            )
          )
        RETURNING *`,
-      [normalizedStatus, transactionId, String(req.userId), req.outletId ? String(req.outletId) : ""]
+      [normalizedStatus, String(transactionId), String(req.userId), outletIdStr]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: "Transaksi tidak ditemukan" });
+      return;
+    }
+
+    const transaction = toTransactionPayload(result.rows[0]);
+    res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+});
+
+// PUT /transactions/:id/status - ubah status transaksi by path param
+router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const normalizedStatus = normalizeStatus(status);
+
+  if (!status) {
+    res.status(400).json({ message: "Status wajib diisi" });
+    return;
+  }
+
+  if (!normalizedStatus) {
+    res.status(400).json({
+      message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}`,
+    });
+    return;
+  }
+
+  const outletIdStr = req.outletId ? String(req.outletId) : "";
+
+  try {
+    const result = await pool.query(
+      `UPDATE transactions SET status = $1::text, updated_at = NOW()
+       WHERE id::text = $2::text
+         AND (
+           owner_id::text = $3::text
+           OR outlet_id::text = $4::text
+           OR EXISTS (
+             SELECT 1 FROM outlets o
+             WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
+               AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
+           )
+           OR EXISTS (
+             SELECT 1 FROM customers c
+             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
+           )
+           OR EXISTS (
+             SELECT 1 FROM services s
+             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
+           )
+         )
+       RETURNING *`,
+      [normalizedStatus, id, String(req.userId), outletIdStr]
     );
 
     if (result.rows.length === 0) {

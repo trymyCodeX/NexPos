@@ -34,7 +34,17 @@ class DeviceViewModel @Inject constructor(
     init { loadDevices() }
 
     private fun deviceKey(device: DeviceInfo): String {
-        return if (device.id > 0) device.id.toString() else device.deviceId
+        // Gunakan device_id (UUID) jika tersedia, fallback ke numeric id
+        val byDeviceId = device.deviceId.takeIf { it.isNotBlank() }
+        val byId = if (device.id > 0) device.id.toString() else null
+        return byDeviceId ?: byId ?: device.id.toString()
+    }
+
+    private fun makeForceLogoutRequest(device: DeviceInfo): ForceLogoutRequest {
+        val numericId = if (device.id > 0) device.id.toString() else ""
+        val deviceUuid = device.deviceId.trim()
+        // Kirim keduanya agar server bisa pilih yang cocok
+        return ForceLogoutRequest(deviceId = deviceUuid.ifBlank { numericId }, id = numericId)
     }
 
     fun loadDevices() {
@@ -74,7 +84,7 @@ class DeviceViewModel @Inject constructor(
                     return@launch
                 }
                 val token = "Bearer $tokenRaw"
-                val res = api.forceLogout(token, ForceLogoutRequest(deviceKey(device)))
+                val res = api.forceLogout(token, makeForceLogoutRequest(device))
                 if (res.isSuccessful) {
                     _state.value = _state.value.copy(message = "Device berhasil di-force logout")
                     loadDevices()
