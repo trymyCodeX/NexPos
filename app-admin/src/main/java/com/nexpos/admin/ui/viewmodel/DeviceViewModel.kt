@@ -33,6 +33,10 @@ class DeviceViewModel @Inject constructor(
 
     init { loadDevices() }
 
+    private fun deviceKey(device: DeviceInfo): String {
+        return if (device.id > 0) device.id.toString() else device.deviceId
+    }
+
     fun loadDevices() {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
@@ -60,7 +64,7 @@ class DeviceViewModel @Inject constructor(
         }
     }
 
-    fun forceLogout(deviceId: Int) {
+    fun forceLogout(device: DeviceInfo) {
         viewModelScope.launch {
             _state.value = _state.value.copy(error = null)
             try {
@@ -70,7 +74,7 @@ class DeviceViewModel @Inject constructor(
                     return@launch
                 }
                 val token = "Bearer $tokenRaw"
-                val res = api.forceLogout(token, ForceLogoutRequest(deviceId))
+                val res = api.forceLogout(token, ForceLogoutRequest(deviceKey(device)))
                 if (res.isSuccessful) {
                     _state.value = _state.value.copy(message = "Device berhasil di-force logout")
                     loadDevices()
@@ -92,7 +96,7 @@ class DeviceViewModel @Inject constructor(
         }
     }
 
-    fun deleteDevice(deviceId: Int) {
+    fun deleteDevice(device: DeviceInfo) {
         viewModelScope.launch {
             _state.value = _state.value.copy(error = null)
             try {
@@ -102,7 +106,7 @@ class DeviceViewModel @Inject constructor(
                     return@launch
                 }
                 val token = "Bearer $tokenRaw"
-                val res = api.deleteDevice(token, deviceId)
+                val res = api.deleteDevice(token, deviceKey(device))
                 if (res.isSuccessful) {
                     _state.value = _state.value.copy(message = "Device berhasil dihapus")
                     loadDevices()
@@ -124,7 +128,7 @@ class DeviceViewModel @Inject constructor(
         }
     }
 
-    fun updateDevice(deviceId: Int, newName: String) {
+    fun updateDevice(device: DeviceInfo, newName: String) {
         if (newName.isBlank()) {
             _state.value = _state.value.copy(error = "Nama device tidak boleh kosong")
             return
@@ -138,7 +142,7 @@ class DeviceViewModel @Inject constructor(
                     return@launch
                 }
                 val token = "Bearer $tokenRaw"
-                val res = api.updateDevice(token, deviceId, UpdateDeviceRequest(newName.trim()))
+                val res = api.updateDevice(token, deviceKey(device), UpdateDeviceRequest(newName.trim()))
                 if (res.isSuccessful) {
                     _state.value = _state.value.copy(message = "Nama device berhasil diperbarui")
                     loadDevices()
