@@ -39,7 +39,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: app-flutter
-        run: flutter build apk --debug --no-shrink
+        run: flutter build apk --debug
 
       - name: Rename Debug APK
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Build Release APK
         if: github.event_name == 'push'
         working-directory: app-flutter
-        run: flutter build apk --release --no-shrink
+        run: flutter build apk --release
 
       - name: Rename Release APK
         if: github.event_name == 'push'
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: app-flutter-admin
-        run: flutter build apk --debug --no-shrink
+        run: flutter build apk --debug
 
       - name: Rename Debug APK
         run: |
@@ -128,7 +128,7 @@ jobs:
       - name: Build Release APK
         if: github.event_name == 'push'
         working-directory: app-flutter-admin
-        run: flutter build apk --release --no-shrink
+        run: flutter build apk --release
 
       - name: Rename Release APK
         if: github.event_name == 'push'
