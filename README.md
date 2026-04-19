@@ -1,133 +1,92 @@
-# NexPos
+# NexPos — Aplikasi POS Laundry
 
-NexPos adalah aplikasi POS laundry dengan dua aplikasi Android dan satu backend API:
+  NexPos adalah aplikasi kasir untuk usaha laundry. Terdiri dari dua aplikasi mobile yang saling terhubung ke satu server pusat.
 
-- `app-admin`: aplikasi owner/admin untuk login, registrasi, outlet, device, dashboard, dan monitoring transaksi.
-- `app-laundry`: aplikasi kasir/outlet untuk login device, membuat transaksi, melihat daftar transaksi, dan memperbarui status laundry.
-- `server`: backend Express + PostgreSQL untuk auth, outlet, device heartbeat, dan transaksi.
+  ---
 
-## Struktur Project
+  ## Dua Aplikasi
 
-```text
-app-admin/      Aplikasi Android untuk owner/admin
-app-laundry/    Aplikasi Android untuk kasir/outlet
-core/           Modul Android bersama: API, model, session, theme, komponen UI
-gradle/         Konfigurasi Gradle wrapper
-server/         Backend API Node.js/Express
-```
+  ### NexPos Laundry (untuk Kasir)
+  Digunakan oleh karyawan di meja kasir outlet laundry.
 
-## Backend Server
+  - Login menggunakan kode aktivasi outlet
+  - Buat transaksi laundry baru
+  - Catat pelanggan dan layanan yang dipilih
+  - Perbarui status cucian: Diterima → Dicuci → Disetrika → Selesai
+  - Lihat riwayat transaksi
 
-Backend menggunakan PostgreSQL melalui environment variable `DATABASE_URL`.
+  ### NexPos Admin (untuk Pemilik)
+  Digunakan oleh pemilik usaha untuk memantau dan mengelola.
 
-Environment yang umum digunakan:
+  - Daftar dan masuk akun pemilik
+  - Kelola outlet (tambah, ubah nama, hapus)
+  - Pantau perangkat kasir yang terdaftar
+  - Lihat semua transaksi di seluruh outlet
+  - Laporan pendapatan dan statistik
+  - Kirim notifikasi ke perangkat kasir
 
-```env
-DATABASE_URL=postgresql://...
-JWT_SECRET=isi_secret_yang_aman
-JWT_EXPIRES_IN=7d
-PORT=3000
-NODE_ENV=production
-```
+  ---
 
-Menjalankan server secara lokal:
+  ## Cara Pakai (Alur Umum)
 
-```bash
-cd server
-npm install
-npm run dev
-```
+  1. Pemilik membuat akun melalui aplikasi **NexPos Admin**
+  2. Pemilik membuat outlet dan mendapatkan kode aktivasi
+  3. Kasir membuka **NexPos Laundry**, masukkan kode aktivasi untuk login
+  4. Kasir mulai membuat transaksi dan mengelola cucian
+  5. Pemilik bisa memantau semua transaksi dan pendapatan dari aplikasinya
 
-Build dan start server:
+  ---
 
-```bash
-cd server
-npm install
-npm run build
-npm start
-```
+  ## Server
 
-Health check:
+  Aplikasi terhubung ke server yang sudah berjalan di:
 
-```bash
-curl https://nexpos-production-3747.up.railway.app/api/healthz
-```
+  ```
+  https://nexpos-production-3747.up.railway.app
+  ```
 
-## Database
+  Tidak perlu setup server tambahan — cukup install aplikasinya.
 
-Saat server start, backend akan memastikan tabel utama tersedia:
+  Jika ingin menjalankan server sendiri secara lokal:
 
-- `users`
-- `outlets`
-- `devices`
-- `transactions`
+  ```bash
+  cd server
+  npm install
+  npm run dev
+  ```
 
-Server juga menjalankan migrasi aman untuk memastikan database lama di Railway memiliki kolom-kolom yang dibutuhkan oleh versi terbaru, termasuk `transactions.updated_at`. Jika database Railway sudah dibuat sebelum kolom ini ditambahkan, kolom akan dibuat otomatis dengan:
+  ---
 
-```sql
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-```
+  ## Build Aplikasi
 
-## Android
+  APK dibangun otomatis melalui GitHub Actions setiap kali ada perubahan kode.
+  Hasil APK bisa diunduh langsung dari tab **Actions** di halaman GitHub ini.
 
-Base URL API berada di:
+  Untuk build manual di komputer:
 
-```text
-core/build.gradle.kts
-```
+  ```bash
+  # Aplikasi Laundry
+  cd app-flutter
+  flutter pub get
+  flutter build apk
 
-Nilai default saat ini:
+  # Aplikasi Admin
+  cd app-flutter-admin
+  flutter pub get
+  flutter build apk
+  ```
 
-```text
-https://nexpos-production-3747.up.railway.app
-```
+  ---
 
-Build debug APK:
+  ## Struktur Folder
 
-```bash
-./gradlew :app-admin:assembleDebug
-./gradlew :app-laundry:assembleDebug
-```
+  ```
+  app-flutter/          Aplikasi kasir (NexPos Laundry)
+  app-flutter-admin/    Aplikasi pemilik (NexPos Admin)
+  server/               Server backend
+  ```
 
-Build release APK:
+  ---
 
-```bash
-./gradlew :app-admin:assembleRelease
-./gradlew :app-laundry:assembleRelease
-```
-
-## Alur Penggunaan
-
-1. Owner membuat akun melalui `app-admin`.
-2. Owner login dan membuat outlet.
-3. Outlet menghasilkan kode aktivasi.
-4. Kasir login di `app-laundry` memakai kode aktivasi.
-5. Kasir membuat transaksi laundry.
-6. Kasir/admin memperbarui status transaksi: `diterima`, `dicuci`, `disetrika`, `selesai`.
-7. Device kasir mengirim heartbeat agar status online/offline tetap akurat.
-
-## Catatan Perbaikan Terbaru
-
-- `SessionManager` sudah menyediakan `getOutletId()` dan `getDeviceId()`.
-- Backend memastikan kolom `transactions.updated_at` tersedia di database lama maupun baru.
-- Response transaksi menyertakan `updatedAt`.
-- Client Android membedakan error koneksi dan error parsing response server agar pesan di UI lebih akurat.
-- Tampilan auth diberi padding untuk keyboard dan navigation bar.
-- Warna navigation bar mengikuti theme agar tidak muncul putih mencolok pada dark mode.
-
-## Endpoint Utama
-
-```text
-GET  /api/healthz
-POST /api/auth/register
-POST /api/auth/login
-POST /api/auth/login-device
-GET  /api/outlets
-POST /api/outlets
-GET  /api/devices
-POST /api/devices/heartbeat
-POST /api/devices/force-logout
-GET  /api/transactions
-POST /api/transactions
-PUT  /api/transactions/status
-```
+  *NexPos dibuat untuk memudahkan pengelolaan usaha laundry sehari-hari.*
+  
