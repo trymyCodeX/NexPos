@@ -1,146 +1,189 @@
 name: Build NexPos APKs
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+  on:
+    push:
+      branches: [ main, master ]
+    pull_request:
+      branches: [ main, master ]
+    workflow_dispatch:
 
-jobs:
-  build:
-    name: Build APKs
-    runs-on: ubuntu-latest
+  jobs:
+    # ─────────────────────────────────────────────────────────────
+    # JOB 1: Build NexPos Admin (Kotlin/Gradle - tidak berubah)
+    # ─────────────────────────────────────────────────────────────
+    build-admin:
+      name: Build NexPos Admin (Kotlin)
+      runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout kode
-        uses: actions/checkout@v4
+      steps:
+        - name: Checkout kode
+          uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+        - name: Setup JDK 17
+          uses: actions/setup-java@v4
+          with:
+            java-version: '17'
+            distribution: 'temurin'
+            cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: wrapper
+        - name: Setup Gradle
+          uses: gradle/actions/setup-gradle@v3
+          with:
+            gradle-version: wrapper
 
-      - name: Buat local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+        - name: Buat local.properties
+          run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Accept SDK Licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+        - name: Accept SDK Licenses
+          run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Install SDK Components
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "build-tools;34.0.0" \
-            "platforms;android-34" > /dev/null 2>&1 || true
+        - name: Install SDK Components
+          run: |
+            $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+              "build-tools;34.0.0" \
+              "platforms;android-34" > /dev/null 2>&1 || true
 
-      - name: Beri izin Gradle
-        run: chmod +x ./gradlew
+        - name: Beri izin Gradle
+          run: chmod +x ./gradlew
 
-      # ─────────────────────────────────────────
-      # DEBUG BUILD (selalu, termasuk PR)
-      # ─────────────────────────────────────────
-      - name: Build Admin APK Debug
-        run: ./gradlew :app-admin:assembleDebug --no-daemon --stacktrace
+        - name: Build Admin APK Debug
+          run: ./gradlew :app-admin:assembleDebug --no-daemon --stacktrace
 
-      - name: Build Laundry APK Debug
-        run: ./gradlew :app-laundry:assembleDebug --no-daemon --stacktrace
+        - name: Rename Admin Debug APK
+          run: |
+            SHORT="${{ github.sha }}"
+            SHORT="${SHORT:0:7}"
+            cp app-admin/build/outputs/apk/debug/app-admin-debug.apk \
+               app-admin/build/outputs/apk/debug/NexPos-Admin-Debug-${SHORT}.apk
 
-      - name: Rename Debug APKs
-        run: |
-          SHA="${{ github.sha }}"
-          SHORT="${SHA:0:7}"
-          cp app-admin/build/outputs/apk/debug/app-admin-debug.apk \
-             app-admin/build/outputs/apk/debug/NexPos-Admin-Debug-${SHORT}.apk
-          cp app-laundry/build/outputs/apk/debug/app-laundry-debug.apk \
-             app-laundry/build/outputs/apk/debug/NexPos-Laundry-Debug-${SHORT}.apk
+        - name: Upload Admin APK Debug
+          uses: actions/upload-artifact@v4
+          with:
+            name: NexPos-Admin-Debug-${{ github.sha }}
+            path: app-admin/build/outputs/apk/debug/NexPos-Admin-Debug-*.apk
+            retention-days: 14
 
-      - name: Upload Admin APK Debug
-        uses: actions/upload-artifact@v4
-        with:
-          name: NexPos-Admin-Debug-${{ github.sha && github.sha || 'latest' }}
-          path: app-admin/build/outputs/apk/debug/NexPos-Admin-Debug-*.apk
-          retention-days: 14
+        - name: Build Admin APK Release
+          if: github.event_name == 'push'
+          run: ./gradlew :app-admin:assembleRelease --no-daemon --stacktrace
 
-      - name: Upload Laundry APK Debug
-        uses: actions/upload-artifact@v4
-        with:
-          name: NexPos-Laundry-Debug-${{ github.sha && github.sha || 'latest' }}
-          path: app-laundry/build/outputs/apk/debug/NexPos-Laundry-Debug-*.apk
-          retention-days: 14
+        - name: Rename Admin Release APK
+          if: github.event_name == 'push'
+          run: |
+            SHORT="${{ github.sha }}"
+            SHORT="${SHORT:0:7}"
+            cp app-admin/build/outputs/apk/release/app-admin-release.apk \
+               app-admin/build/outputs/apk/release/NexPos-Admin-Release-${SHORT}.apk
 
-      # ─────────────────────────────────────────
-      # RELEASE BUILD (hanya push ke main/master)
-      # ─────────────────────────────────────────
-      - name: Build Admin APK Release
-        if: github.event_name == 'push'
-        run: ./gradlew :app-admin:assembleRelease --no-daemon --stacktrace
+        - name: Upload Admin APK Release
+          if: github.event_name == 'push'
+          uses: actions/upload-artifact@v4
+          with:
+            name: NexPos-Admin-Release-${{ github.sha }}
+            path: app-admin/build/outputs/apk/release/NexPos-Admin-Release-*.apk
+            retention-days: 30
 
-      - name: Build Laundry APK Release
-        if: github.event_name == 'push'
-        run: ./gradlew :app-laundry:assembleRelease --no-daemon --stacktrace
+    # ─────────────────────────────────────────────────────────────
+    # JOB 2: Build NexPos Laundry (Flutter - dibangun ulang)
+    # ─────────────────────────────────────────────────────────────
+    build-laundry-flutter:
+      name: Build NexPos Laundry (Flutter)
+      runs-on: ubuntu-latest
 
-      - name: Rename Release APKs
-        if: github.event_name == 'push'
-        run: |
-          SHA="${{ github.sha }}"
-          SHORT="${SHA:0:7}"
-          cp app-admin/build/outputs/apk/release/app-admin-release.apk \
-             app-admin/build/outputs/apk/release/NexPos-Admin-Release-${SHORT}.apk
-          cp app-laundry/build/outputs/apk/release/app-laundry-release.apk \
-             app-laundry/build/outputs/apk/release/NexPos-Laundry-Release-${SHORT}.apk
+      steps:
+        - name: Checkout kode
+          uses: actions/checkout@v4
 
-      - name: Upload Admin APK Release
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: NexPos-Admin-Release-${{ github.sha }}
-          path: app-admin/build/outputs/apk/release/NexPos-Admin-Release-*.apk
-          retention-days: 30
+        - name: Setup JDK 17
+          uses: actions/setup-java@v4
+          with:
+            java-version: '17'
+            distribution: 'temurin'
 
-      - name: Upload Laundry APK Release
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: NexPos-Laundry-Release-${{ github.sha }}
-          path: app-laundry/build/outputs/apk/release/NexPos-Laundry-Release-*.apk
-          retention-days: 30
+        - name: Setup Flutter
+          uses: subosito/flutter-action@v2
+          with:
+            flutter-version: '3.22.x'
+            channel: 'stable'
+            cache: true
 
-      # ─────────────────────────────────────────
-      # SUMMARY
-      # ─────────────────────────────────────────
-      - name: Build Summary
-        if: always()
-        run: |
-          echo "## NexPos Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| App | Build | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          if [ -f app-admin/build/outputs/apk/debug/app-admin-debug.apk ]; then
-            SIZE=$(du -h app-admin/build/outputs/apk/debug/app-admin-debug.apk | cut -f1)
-            echo "| Admin | Debug ($SIZE) | ✅ |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Admin | Debug | ❌ |" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -f app-laundry/build/outputs/apk/debug/app-laundry-debug.apk ]; then
-            SIZE=$(du -h app-laundry/build/outputs/apk/debug/app-laundry-debug.apk | cut -f1)
-            echo "| Laundry | Debug ($SIZE) | ✅ |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Laundry | Debug | ❌ |" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -f app-admin/build/outputs/apk/release/app-admin-release.apk ]; then
-            SIZE=$(du -h app-admin/build/outputs/apk/release/app-admin-release.apk | cut -f1)
-            echo "| Admin | Release ($SIZE) | ✅ |" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -f app-laundry/build/outputs/apk/release/app-laundry-release.apk ]; then
-            SIZE=$(du -h app-laundry/build/outputs/apk/release/app-laundry-release.apk | cut -f1)
-            echo "| Laundry | Release ($SIZE) | ✅ |" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        - name: Flutter pub get
+          working-directory: app-flutter
+          run: flutter pub get
+
+        - name: Flutter analyze
+          working-directory: app-flutter
+          run: flutter analyze --no-fatal-infos
+          continue-on-error: true
+
+        - name: Build Laundry APK Debug
+          working-directory: app-flutter
+          run: flutter build apk --debug --no-shrink
+
+        - name: Rename Laundry Debug APK
+          run: |
+            SHORT="${{ github.sha }}"
+            SHORT="${SHORT:0:7}"
+            mkdir -p app-flutter/build/outputs
+            cp app-flutter/build/app/outputs/flutter-apk/app-debug.apk \
+               app-flutter/build/outputs/NexPos-Laundry-Debug-${SHORT}.apk
+
+        - name: Upload Laundry APK Debug
+          uses: actions/upload-artifact@v4
+          with:
+            name: NexPos-Laundry-Debug-${{ github.sha }}
+            path: app-flutter/build/outputs/NexPos-Laundry-Debug-*.apk
+            retention-days: 14
+
+        - name: Build Laundry APK Release
+          if: github.event_name == 'push'
+          working-directory: app-flutter
+          run: flutter build apk --release --no-shrink
+
+        - name: Rename Laundry Release APK
+          if: github.event_name == 'push'
+          run: |
+            SHORT="${{ github.sha }}"
+            SHORT="${SHORT:0:7}"
+            cp app-flutter/build/app/outputs/flutter-apk/app-release.apk \
+               app-flutter/build/outputs/NexPos-Laundry-Release-${SHORT}.apk
+
+        - name: Upload Laundry APK Release
+          if: github.event_name == 'push'
+          uses: actions/upload-artifact@v4
+          with:
+            name: NexPos-Laundry-Release-${{ github.sha }}
+            path: app-flutter/build/outputs/NexPos-Laundry-Release-*.apk
+            retention-days: 30
+
+    # ─────────────────────────────────────────────────────────────
+    # JOB 3: Summary setelah kedua job selesai
+    # ─────────────────────────────────────────────────────────────
+    summary:
+      name: Build Summary
+      runs-on: ubuntu-latest
+      needs: [build-admin, build-laundry-flutter]
+      if: always()
+
+      steps:
+        - name: Tulis Ringkasan
+          run: |
+            echo "## NexPos Build Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| App | Platform | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            ADMIN_STATUS="${{ needs.build-admin.result }}"
+            LAUNDRY_STATUS="${{ needs.build-laundry-flutter.result }}"
+            if [ "$ADMIN_STATUS" = "success" ]; then
+              echo "| NexPos Admin | Android (Kotlin) | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| NexPos Admin | Android (Kotlin) | ❌ Gagal |" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ "$LAUNDRY_STATUS" = "success" ]; then
+              echo "| NexPos Laundry | Flutter | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| NexPos Laundry | Flutter | ❌ Gagal |" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Commit: `${{ github.sha }}`" >> $GITHUB_STEP_SUMMARY
+  
