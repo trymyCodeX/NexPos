@@ -1,5 +1,5 @@
 class TransactionInfo {
-    final int id;
+    final String id;
     final int outletId;
     final String customer;
     final String? service;
@@ -31,7 +31,7 @@ class TransactionInfo {
 
     factory TransactionInfo.fromJson(Map<String, dynamic> json) {
       return TransactionInfo(
-        id: _parseInt(json['id']),
+        id: json['id']?.toString() ?? '0',
         outletId: _parseInt(json['outletId']),
         customer: json['customer'] ?? json['customerName'] ?? '',
         service: json['service'] ?? json['serviceName'],
@@ -71,7 +71,7 @@ class TransactionInfo {
   }
 
   class UpdateStatusRequest {
-    final int transactionId;
+    final String transactionId;
     final String status;
 
     UpdateStatusRequest({required this.transactionId, required this.status});
