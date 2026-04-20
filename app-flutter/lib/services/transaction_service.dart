@@ -19,14 +19,14 @@ class TransactionService {
     return TransactionInfo.fromJson(data);
   }
 
-  Future<TransactionInfo> updateStatus(int transactionId, String status) async {
+  Future<TransactionInfo> updateStatus(String transactionId, String status) async {
     final data = await _api.put('${AppConstants.apiTransactions}/$transactionId/status', {
       'status': status,
     });
     return TransactionInfo.fromJson(data);
   }
 
-  Future<void> deleteTransaction(int id) async {
+  Future<void> deleteTransaction(String id) async {
     await _api.delete('${AppConstants.apiTransactions}/$id');
   }
 
