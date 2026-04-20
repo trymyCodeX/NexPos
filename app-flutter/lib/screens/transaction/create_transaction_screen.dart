@@ -67,7 +67,6 @@ import 'package:flutter/material.dart';
                 Text('Buat Transaksi', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
 
-                // Customer selection
                 Text('Pilih Pelanggan', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 TextField(
@@ -87,21 +86,34 @@ import 'package:flutter/material.dart';
                     ),
                   )
                 else
+                  // FIX #3: Scrollable list — tidak lagi dibatasi take(5)
                   Card(
-                    child: Column(
-                      children: filteredCustomers.take(5).map((c) => RadioListTile<CustomerInfo>(
-                        value: c,
-                        groupValue: _selectedCustomer,
-                        onChanged: (v) => setState(() => _selectedCustomer = v),
-                        title: Text(c.name),
-                        subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
-                        dense: true,
-                      )).toList(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: filteredCustomers.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('Tidak ada pelanggan yang cocok', style: TextStyle(color: AppTheme.gray500)),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filteredCustomers.length,
+                              itemBuilder: (_, i) {
+                                final c = filteredCustomers[i];
+                                return RadioListTile<CustomerInfo>(
+                                  value: c,
+                                  groupValue: _selectedCustomer,
+                                  onChanged: (v) => setState(() => _selectedCustomer = v),
+                                  title: Text(c.name),
+                                  subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
+                                  dense: true,
+                                );
+                              },
+                            ),
                     ),
                   ),
                 const SizedBox(height: 16),
 
-                // Service selection
                 Text('Pilih Layanan', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 TextField(
@@ -121,22 +133,34 @@ import 'package:flutter/material.dart';
                     ),
                   )
                 else
+                  // FIX #3: Scrollable list — tidak lagi dibatasi take(5)
                   Card(
-                    child: Column(
-                      children: filteredServices.take(5).map((s) => RadioListTile<ServiceInfo>(
-                        value: s,
-                        groupValue: _selectedService,
-                        onChanged: (v) => setState(() => _selectedService = v),
-                        title: Text(s.name),
-                        subtitle: Text('${FormatUtils.currency(s.price.toDouble())} / ${s.unit}'),
-                        dense: true,
-                      )).toList(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: filteredServices.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('Tidak ada layanan yang cocok', style: TextStyle(color: AppTheme.gray500)),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filteredServices.length,
+                              itemBuilder: (_, i) {
+                                final s = filteredServices[i];
+                                return RadioListTile<ServiceInfo>(
+                                  value: s,
+                                  groupValue: _selectedService,
+                                  onChanged: (v) => setState(() => _selectedService = v),
+                                  title: Text(s.name),
+                                  subtitle: Text('${FormatUtils.currency(s.price.toDouble())} / ${s.unit}'),
+                                  dense: true,
+                                );
+                              },
+                            ),
                     ),
                   ),
                 const SizedBox(height: 16),
 
-                // Quantity
-                // BUG FIX: label unit dinamis sesuai layanan yang dipilih
                 Text('Jumlah (${_selectedService?.unit ?? 'unit'})',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
@@ -144,7 +168,6 @@ import 'package:flutter/material.dart';
                   children: [
                     IconButton(
                       onPressed: () {
-                        // BUG FIX: gunakan double.tryParse agar bisa handle nilai desimal
                         final curr = double.tryParse(_qtyController.text) ?? 1.0;
                         if (curr > 0.5) {
                           setState(() => _qtyController.text = (curr - 0.5).toStringAsFixed(
@@ -159,8 +182,6 @@ import 'package:flutter/material.dart';
                         controller: _qtyController,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         textAlign: TextAlign.center,
-                        // BUG FIX: izinkan input desimal (titik) selain digit bulat
-                        // FilteringTextInputFormatter.digitsOnly tidak mendukung desimal
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
                         ],
@@ -170,7 +191,6 @@ import 'package:flutter/material.dart';
                     ),
                     IconButton(
                       onPressed: () {
-                        // BUG FIX: gunakan double.tryParse agar tidak kehilangan presisi desimal
                         final curr = double.tryParse(_qtyController.text) ?? 1.0;
                         setState(() => _qtyController.text = (curr + 0.5).toStringAsFixed(
                           curr + 0.5 == (curr + 0.5).roundToDouble() ? 0 : 1,
@@ -182,7 +202,6 @@ import 'package:flutter/material.dart';
                 ),
                 const SizedBox(height: 16),
 
-                // Total
                 if (_selectedService != null && _selectedCustomer != null)
                   Column(
                     children: [
@@ -251,7 +270,11 @@ import 'package:flutter/material.dart';
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton.icon(
-                    onPressed: _isLoading || _selectedCustomer == null || _selectedService == null
+                    // FIX #6: Tombol disabled juga saat qty <= 0 (field kosong)
+                    onPressed: _isLoading
+                        || _selectedCustomer == null
+                        || _selectedService == null
+                        || _effectiveQty <= 0
                         ? null
                         : () => _submit(provider),
                     icon: _isLoading
@@ -268,8 +291,6 @@ import 'package:flutter/material.dart';
     }
 
     Future<void> _submit(TransactionProvider provider) async {
-      // BUG FIX: gunakan _effectiveQty (double) bukan int.tryParse
-      // int.tryParse gagal parse nilai desimal seperti '2.5', menghasilkan qty = 0
       final qty = _effectiveQty;
       if (qty <= 0) {
         setState(() => _error = 'Jumlah harus lebih dari 0');
@@ -304,4 +325,3 @@ import 'package:flutter/material.dart';
       }
     }
   }
-  
