@@ -325,6 +325,7 @@ import 'package:flutter/material.dart';
   class TransactionProvider extends ChangeNotifier {
     bool isLoading = false;
     String? error;
+    String? message;
     List<TransactionInfo> transactions = [];
     int? filterOutletId;
 
@@ -349,6 +350,46 @@ import 'package:flutter/material.dart';
         error = e.message;
         notifyListeners();
       }
+    }
+
+    // FIX #7: Admin bisa update status transaksi
+    Future<bool> updateStatus(int transactionId, String status) async {
+      try {
+        final token = await _session.getToken();
+        await _api.put(
+          '/api/transactions/$transactionId/status',
+          {'status': status},
+          token: token,
+        );
+        message = 'Status berhasil diperbarui';
+        await load(outletId: filterOutletId);
+        return true;
+      } on ApiException catch (e) {
+        error = e.message;
+        notifyListeners();
+        return false;
+      }
+    }
+
+    // FIX #7: Admin bisa hapus transaksi
+    Future<bool> deleteTransaction(int id) async {
+      try {
+        final token = await _session.getToken();
+        await _api.delete('/api/transactions/$id', token: token);
+        message = 'Transaksi berhasil dihapus';
+        await load(outletId: filterOutletId);
+        return true;
+      } on ApiException catch (e) {
+        error = e.message;
+        notifyListeners();
+        return false;
+      }
+    }
+
+    void clearMessage() {
+      error = null;
+      message = null;
+      notifyListeners();
     }
   }
 
