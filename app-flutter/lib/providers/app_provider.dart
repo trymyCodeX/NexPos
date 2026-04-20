@@ -189,7 +189,7 @@ import 'package:flutter/foundation.dart';
       }
     }
 
-    Future<bool> updateStatus(int transactionId, String status) async {
+    Future<bool> updateStatus(String transactionId, String status) async {
       try {
         await _service.updateStatus(transactionId, status);
         await loadTransactions(silent: true);
@@ -202,7 +202,7 @@ import 'package:flutter/foundation.dart';
       }
     }
 
-    Future<bool> deleteTransaction(int id) async {
+    Future<bool> deleteTransaction(String id) async {
       try {
         await _service.deleteTransaction(id);
         await loadTransactions(silent: true);
