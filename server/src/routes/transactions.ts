@@ -39,7 +39,7 @@ function normalizeStatus(value: unknown): string | null {
 
 function toTransactionPayload(t: any) {
   return {
-    id: safeInt(t.id),
+    id: t.id !== null && t.id !== undefined ? t.id : 0,
     outletId: safeInt(t.outlet_client_id ?? t.outlet_id),
     outletName: t.outlet_name ?? null,
     customerId: t.customer_id,
