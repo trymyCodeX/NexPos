@@ -12,15 +12,15 @@ function safeInt(value: unknown): number {
 router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      `SELECT d.*, o.client_id as outlet_client_id, o.name as outlet_name 
-       FROM devices d 
+      `SELECT d.*, o.client_id as outlet_client_id, o.name as outlet_name
+       FROM devices d
        LEFT JOIN outlets o ON d.outlet_id::text = o.id::text OR d.outlet_id::text = o.client_id::text
-       WHERE d.owner_id::text = $1::text 
+       WHERE d.owner_id::text = $1::text
        ORDER BY d.last_seen DESC NULLS LAST`,
       [req.userId]
     );
     res.json({
-      devices: result.rows.map(d => ({
+      devices: result.rows.map((d) => ({
         id: d.id,
         deviceName: d.device_name ?? d.name,
         deviceId: d.device_id,
@@ -31,11 +31,12 @@ router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Prom
       })),
     });
   } catch (err) {
-    console.error(err);
+    console.error("[Devices GET]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
+// BUG FIX: heartbeat menggunakan device_id (UUID hardware) untuk update last_seen
 router.post("/heartbeat", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { deviceId } = req.body;
   if (!deviceId) {
@@ -45,28 +46,26 @@ router.post("/heartbeat", authenticateToken, async (req: AuthRequest, res: Respo
 
   try {
     await pool.query(
-      "UPDATE devices SET last_seen = NOW(), status = 'online' WHERE device_id = $1",
-      [deviceId]
+      "UPDATE devices SET last_seen = NOW(), status = 'online' WHERE device_id::text = $1::text",
+      [String(deviceId)]
     );
 
     await pool.query(
-      `UPDATE devices SET status = 'offline' 
-       WHERE owner_id::text = $1::text 
-       AND device_id != $2 
-       AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL '2 minutes')`,
-      [req.userId, deviceId]
+      `UPDATE devices SET status = 'offline'
+       WHERE owner_id::text = $1::text
+         AND device_id::text != $2::text
+         AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL '2 minutes')`,
+      [String(req.userId), String(deviceId)]
     );
 
     res.json({ message: "Heartbeat berhasil dikirim" });
   } catch (err) {
-    console.error(err);
+    console.error("[Devices heartbeat]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
 router.post("/force-logout", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  // Terima deviceId (bisa berupa numeric string = id, atau UUID = device_id)
-  // Juga terima field "id" sebagai alternatif
   const deviceId = String(req.body.deviceId ?? req.body.id ?? "").trim();
 
   if (!deviceId) {
@@ -76,9 +75,9 @@ router.post("/force-logout", authenticateToken, async (req: AuthRequest, res: Re
 
   try {
     const result = await pool.query(
-      `UPDATE devices SET status = 'offline', refresh_token = NULL 
-       WHERE (id::text = $1::text OR device_id::text = $1::text) 
-         AND owner_id::text = $2::text 
+      `UPDATE devices SET status = 'offline', refresh_token = NULL
+       WHERE (id::text = $1::text OR device_id::text = $1::text)
+         AND owner_id::text = $2::text
        RETURNING id`,
       [deviceId, String(req.userId)]
     );
@@ -90,7 +89,7 @@ router.post("/force-logout", authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ message: "Device berhasil di-force logout" });
   } catch (err) {
-    console.error(err);
+    console.error("[Devices force-logout]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -105,11 +104,10 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
   }
 
   try {
-    // Cari device dulu untuk memastikan kepemilikan, lalu update
     const result = await pool.query(
-      `UPDATE devices SET device_name = $1, name = $1 
-       WHERE (id::text = $2::text OR device_id::text = $2::text) 
-         AND owner_id::text = $3::text 
+      `UPDATE devices SET device_name = $1, name = $1
+       WHERE (id::text = $2::text OR device_id::text = $2::text)
+         AND owner_id::text = $3::text
        RETURNING id, device_name`,
       [String(deviceName).trim(), String(id), String(req.userId)]
     );
@@ -121,7 +119,7 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
 
     res.json({ message: "Nama device berhasil diperbarui" });
   } catch (err) {
-    console.error("[PUT /devices/:id]", err);
+    console.error("[Devices PUT]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -131,9 +129,9 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
   try {
     const result = await pool.query(
-      `DELETE FROM devices 
-       WHERE (id::text = $1::text OR device_id::text = $1::text) 
-         AND owner_id::text = $2::text 
+      `DELETE FROM devices
+       WHERE (id::text = $1::text OR device_id::text = $1::text)
+         AND owner_id::text = $2::text
        RETURNING id`,
       [String(id), String(req.userId)]
     );
@@ -145,7 +143,7 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ message: "Device berhasil dihapus" });
   } catch (err) {
-    console.error("[DELETE /devices/:id]", err);
+    console.error("[Devices DELETE]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

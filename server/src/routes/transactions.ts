@@ -4,7 +4,7 @@ import { authenticateToken, AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
-const VALID_STATUSES = ["pending", "process", "done", "picked", "diterima", "dicuci", "disetrika", "selesai", "dibatalkan"];
+const VALID_STATUSES = ["diterima", "dicuci", "disetrika", "selesai", "dibatalkan"];
 const STATUS_ALIASES: Record<string, string> = {
   "terima": "diterima",
   "diterima": "diterima",
@@ -59,79 +59,59 @@ function toTransactionPayload(t: any) {
   };
 }
 
-// GET /transactions - ambil semua transaksi dengan JOIN customer & service
+const TX_JOIN_SELECT = `
+  SELECT t.*,
+         c.name AS customer_name,
+         s.name AS service_name,
+         s.price AS service_price,
+         s.unit AS service_unit,
+         o.client_id AS outlet_client_id,
+         o.name AS outlet_name
+  FROM transactions t
+  LEFT JOIN customers c ON t.customer_id = c.id
+  LEFT JOIN services s ON t.service_id = s.id
+  LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
+`;
+
 router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { outletId } = req.query;
+  const queryOutletId = req.query.outletId;
+  const tokenOutletId = req.outletId;
 
   try {
     let result;
-    if (outletId) {
+    if (queryOutletId) {
       result = await pool.query(
-        `SELECT t.*,
-                c.name AS customer_name,
-                s.name AS service_name,
-                s.price AS service_price,
-                s.unit AS service_unit,
-                o.client_id AS outlet_client_id,
-                o.name AS outlet_name
-         FROM transactions t
-         LEFT JOIN customers c ON t.customer_id = c.id
-         LEFT JOIN services s ON t.service_id = s.id
-         LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
+        `${TX_JOIN_SELECT}
          WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text
          ORDER BY t.created_at DESC`,
-        [outletId]
+        [String(queryOutletId)]
       );
-    } else if (req.outletId) {
+    } else if (tokenOutletId) {
       result = await pool.query(
-        `SELECT t.*,
-                c.name AS customer_name,
-                s.name AS service_name,
-                s.price AS service_price,
-                s.unit AS service_unit,
-                o.client_id AS outlet_client_id,
-                o.name AS outlet_name
-         FROM transactions t
-         LEFT JOIN customers c ON t.customer_id = c.id
-         LEFT JOIN services s ON t.service_id = s.id
-         LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
+        `${TX_JOIN_SELECT}
          WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text
          ORDER BY t.created_at DESC`,
-        [req.outletId]
+        [String(tokenOutletId)]
       );
     } else {
       result = await pool.query(
-        `SELECT t.*,
-                c.name AS customer_name,
-                s.name AS service_name,
-                s.price AS service_price,
-                s.unit AS service_unit,
-                o.client_id AS outlet_client_id,
-                o.name AS outlet_name
-         FROM transactions t
-         LEFT JOIN customers c ON t.customer_id = c.id
-         LEFT JOIN services s ON t.service_id = s.id
-         LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
+        `${TX_JOIN_SELECT}
          WHERE o.owner_id::text = $1::text
          ORDER BY t.created_at DESC`,
-        [req.userId]
+        [String(req.userId)]
       );
     }
 
-    res.json({
-      transactions: result.rows.map(toTransactionPayload),
-    });
+    res.json({ transactions: result.rows.map(toTransactionPayload) });
   } catch (err) {
-    console.error(err);
+    console.error("[Transactions GET]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// POST /transactions - buat transaksi baru (harga otomatis dari service)
 router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { outletId, customerId, serviceId, quantity } = req.body;
 
-  // Flow baru: wajib pakai customerId + serviceId
   if (!outletId || !customerId || !serviceId) {
     res.status(400).json({ message: "outletId, customerId, dan serviceId wajib diisi" });
     return;
@@ -144,7 +124,6 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 
   try {
-    // Ambil harga dari tabel services (otomatis), termasuk min_quantity
     const serviceResult = await pool.query(
       "SELECT id, name, price, min_quantity FROM services WHERE id::text = $1::text",
       [serviceId]
@@ -158,12 +137,9 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
     const service = serviceResult.rows[0];
     const price = service.price ?? 0;
     const minQty = service.min_quantity ? Number(service.min_quantity) : null;
-
-    // Jika ada minimal quantity dan input kurang dari minimal, gunakan minimal
     const effectiveQty = minQty !== null && qty < minQty ? minQty : qty;
     const total_amount = price * effectiveQty;
 
-    // Ambil info customer dan outlet untuk logging
     const customerResult = await pool.query(
       "SELECT name FROM customers WHERE id::text = $1::text LIMIT 1",
       [customerId]
@@ -178,44 +154,32 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
          (outlet_id, owner_id, customer_id, service_id, quantity, total_amount, status)
        VALUES ($1::text, $2::text, $3::uuid, $4::uuid, $5::float, $6::integer, 'diterima')
        RETURNING *`,
-      [outletId, req.userId, customerId, serviceId, effectiveQty, total_amount]
+      [String(outletId), String(req.userId), customerId, serviceId, effectiveQty, total_amount]
     );
 
     const tx = result.rows[0];
 
-    // Tulis log transaksi masuk
-    try {
-      await pool.query(
-        `INSERT INTO transaction_logs
-           (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
-         VALUES ($1, 'created', $2, $3, $4, $5, $6, $7, $8, 'diterima', 'kasir', $9)`,
-        [
-          tx.id,
-          String(req.userId),
-          String(outletId),
-          outletResult.rows[0]?.name ?? null,
-          customerResult.rows[0]?.name ?? null,
-          service.name,
-          effectiveQty,
-          total_amount,
-          minQty !== null && qty < minQty
-            ? `Input ${qty}, dihitung dari minimal ${minQty}`
-            : null,
-        ]
-      );
-    } catch (logErr) {
-      console.warn("[LOG] Gagal simpan log transaksi:", logErr);
-    }
+    pool.query(
+      `INSERT INTO transaction_logs
+         (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
+       VALUES ($1, 'created', $2, $3, $4, $5, $6, $7, $8, 'diterima', 'kasir', $9)`,
+      [
+        tx.id, String(req.userId), String(outletId),
+        outletResult.rows[0]?.name ?? null,
+        customerResult.rows[0]?.name ?? null,
+        service.name, effectiveQty, total_amount,
+        minQty !== null && qty < minQty ? `Input ${qty}, dihitung dari minimal ${minQty}` : null,
+      ]
+    ).catch((logErr: Error) => console.warn("[LOG] Gagal simpan log transaksi:", logErr));
 
-    const transaction = toTransactionPayload(tx);
-    res.status(201).json({ ...transaction, transaction: tx });
+    res.status(201).json({ ...toTransactionPayload(tx), transaction: tx });
   } catch (err) {
-    console.error(err);
+    console.error("[Transactions POST]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// PUT /transactions/status (legacy support) - HARUS sebelum /:id/status agar tidak tertimpa wildcard /:id
+// BUG FIX: route /status HARUS sebelum /:id agar tidak tertangkap wildcard /:id
 router.put("/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { transactionId, status } = req.body;
   const normalizedStatus = normalizeStatus(status);
@@ -226,9 +190,7 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
   }
 
   if (!normalizedStatus) {
-    res.status(400).json({
-      message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}`,
-    });
+    res.status(400).json({ message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}` });
     return;
   }
 
@@ -246,14 +208,6 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
              WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
                AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
            )
-           OR EXISTS (
-             SELECT 1 FROM customers c
-             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
-           )
-           OR EXISTS (
-             SELECT 1 FROM services s
-             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
-           )
          )
        RETURNING *`,
       [normalizedStatus, String(transactionId), String(req.userId), outletIdStr]
@@ -267,12 +221,11 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
     const transaction = toTransactionPayload(result.rows[0]);
     res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
   } catch (err) {
-    console.error(err);
+    console.error("[Transactions PUT /status]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// PUT /transactions/:id/status - ubah status transaksi by path param
 router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { status } = req.body;
@@ -284,9 +237,7 @@ router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Respo
   }
 
   if (!normalizedStatus) {
-    res.status(400).json({
-      message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}`,
-    });
+    res.status(400).json({ message: `Status tidak valid. Gunakan: ${VALID_STATUSES.join(", ")}` });
     return;
   }
 
@@ -304,14 +255,6 @@ router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Respo
              WHERE (transactions.outlet_id::text = o.id::text OR transactions.outlet_id::text = o.client_id::text)
                AND (o.owner_id::text = $3::text OR o.id::text = $4::text OR o.client_id::text = $4::text)
            )
-           OR EXISTS (
-             SELECT 1 FROM customers c
-             WHERE transactions.customer_id::text = c.id::text AND c.owner_id::text = $3::text
-           )
-           OR EXISTS (
-             SELECT 1 FROM services s
-             WHERE transactions.service_id::text = s.id::text AND s.owner_id::text = $3::text
-           )
          )
        RETURNING *`,
       [normalizedStatus, id, String(req.userId), outletIdStr]
@@ -325,12 +268,11 @@ router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Respo
     const transaction = toTransactionPayload(result.rows[0]);
     res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
   } catch (err) {
-    console.error(err);
+    console.error("[Transactions PUT /:id/status]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// DELETE /transactions/:id - hapus transaksi (owner atau device dengan outlet yang sama)
 router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
@@ -351,14 +293,6 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
            OR t.outlet_id::text = $3::text
            OR o.id::text = $3::text
            OR o.client_id::text = $3::text
-           OR EXISTS (
-             SELECT 1 FROM customers c2
-             WHERE t.customer_id::text = c2.id::text AND c2.owner_id::text = $2::text
-           )
-           OR EXISTS (
-             SELECT 1 FROM services s2
-             WHERE t.service_id::text = s2.id::text AND s2.owner_id::text = $2::text
-           )
          )`,
       [id, String(req.userId), req.outletId ? String(req.outletId) : ""]
     );
@@ -372,31 +306,19 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
     await pool.query("DELETE FROM transactions WHERE id::text = $1::text", [id]);
 
-    // Tulis log transaksi dihapus
-    try {
-      await pool.query(
-        `INSERT INTO transaction_logs
-           (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
-         VALUES ($1, 'deleted', $2, $3, $4, $5, $6, $7, $8, $9, 'kasir', 'Transaksi dihapus')`,
-        [
-          parseInt(id),
-          String(req.userId),
-          txData.outlet_id,
-          txData.outlet_name,
-          txData.customer_name,
-          txData.service_name,
-          txData.quantity,
-          txData.total_amount,
-          txData.status,
-        ]
-      );
-    } catch (logErr) {
-      console.warn("[LOG] Gagal simpan log hapus transaksi:", logErr);
-    }
+    pool.query(
+      `INSERT INTO transaction_logs
+         (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
+       VALUES ($1, 'deleted', $2, $3, $4, $5, $6, $7, $8, $9, 'kasir', 'Transaksi dihapus')`,
+      [
+        parseInt(id), String(req.userId), txData.outlet_id, txData.outlet_name,
+        txData.customer_name, txData.service_name, txData.quantity, txData.total_amount, txData.status,
+      ]
+    ).catch((logErr: Error) => console.warn("[LOG] Gagal simpan log hapus transaksi:", logErr));
 
     res.json({ message: "Transaksi berhasil dihapus" });
   } catch (err) {
-    console.error(err);
+    console.error("[Transactions DELETE]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

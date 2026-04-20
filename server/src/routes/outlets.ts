@@ -19,6 +19,7 @@ router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Prom
     res.json({
       outlets: result.rows.map((r) => ({
         id: safeInt(r.client_id ?? r.id),
+        dbId: String(r.id),
         ownerId: String(r.owner_id),
         name: r.name as string,
         activationCode: r.activation_code as string,
@@ -59,6 +60,7 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
     res.status(201).json({
       outlet: {
         id: safeInt(outlet.client_id ?? outlet.id),
+        dbId: String(outlet.id),
         ownerId: String(outlet.owner_id),
         name: outlet.name as string,
         activationCode: outlet.activation_code as string,
@@ -71,7 +73,6 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 });
 
-// PUT /outlets/:id - ganti nama outlet
 router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const outletId = parseInt(req.params.id, 10);
   const { name } = req.body;
@@ -82,8 +83,11 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
   }
 
   try {
+    // BUG FIX: query by client_id OR id (untuk kompatibilitas)
     const result = await pool.query(
-      "UPDATE outlets SET name = $1 WHERE client_id::text = $2::text AND owner_id::text = $3::text RETURNING *",
+      `UPDATE outlets SET name = $1
+       WHERE (client_id::text = $2::text OR id::text = $2::text) AND owner_id::text = $3::text
+       RETURNING *`,
       [String(name).trim(), outletId, String(req.userId)]
     );
 
@@ -96,6 +100,7 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
     res.json({
       outlet: {
         id: safeInt(outlet.client_id ?? outlet.id),
+        dbId: String(outlet.id),
         ownerId: String(outlet.owner_id),
         name: outlet.name as string,
         activationCode: outlet.activation_code as string,
@@ -116,8 +121,9 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
   }
 
   try {
+    // BUG FIX: query by client_id OR id
     const existing = await pool.query(
-      "SELECT id, client_id FROM outlets WHERE client_id::text = $1::text AND owner_id::text = $2::text",
+      "SELECT id, client_id FROM outlets WHERE (client_id::text = $1::text OR id::text = $1::text) AND owner_id::text = $2::text",
       [outletId, String(req.userId)]
     );
     if (existing.rows.length === 0) {
@@ -126,11 +132,20 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     const outletDbId = String(existing.rows[0].id);
+    const outletClientId = String(existing.rows[0].client_id ?? existing.rows[0].id);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("DELETE FROM transactions WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text", [outletDbId, String(outletId)]);
-      await client.query("UPDATE devices SET outlet_id = NULL, status = 'offline', refresh_token = NULL WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text", [outletDbId, String(outletId)]);
+      await client.query(
+        "DELETE FROM transactions WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text",
+        [outletDbId, outletClientId]
+      );
+      await client.query(
+        "UPDATE devices SET outlet_id = NULL, status = 'offline', refresh_token = NULL WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text",
+        [outletDbId, outletClientId]
+      );
+      await client.query("DELETE FROM services WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text", [outletDbId, outletClientId]);
+      await client.query("DELETE FROM customers WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text", [outletDbId, outletClientId]);
       await client.query("DELETE FROM outlets WHERE id::text = $1::text", [outletDbId]);
       await client.query("COMMIT");
     } catch (err) {

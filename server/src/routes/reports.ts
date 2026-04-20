@@ -4,20 +4,20 @@ import { authenticateToken, AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
-// GET /reports/summary - ringkasan laporan dengan status laundry yang benar
 router.get("/summary", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { outletId } = req.query;
+  const queryOutletId = req.query.outletId;
+  const tokenOutletId = req.outletId;
 
   try {
-    let whereClause = "";
-    let params: (string | number)[] = [];
+    let whereClause: string;
+    let params: (string | number)[];
 
-    if (outletId) {
+    if (queryOutletId) {
       whereClause = "WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text";
-      params = [String(outletId)];
-    } else if (req.outletId) {
+      params = [String(queryOutletId)];
+    } else if (tokenOutletId) {
       whereClause = "WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text";
-      params = [String(req.outletId)];
+      params = [String(tokenOutletId)];
     } else {
       whereClause = "WHERE o.owner_id::text = $1::text";
       params = [String(req.userId)];
@@ -49,28 +49,28 @@ router.get("/summary", authenticateToken, async (req: AuthRequest, res: Response
       totalDibatalkan: parseInt(row.total_dibatalkan, 10),
     });
   } catch (err) {
-    console.error(err);
+    console.error("[Reports summary]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// GET /reports/daily - ringkasan harian 7 hari terakhir
+// BUG FIX: perbaiki konstruksi query agar tidak ada AND AND ketika both clauses kosong
 router.get("/daily", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { outletId } = req.query;
+  const queryOutletId = req.query.outletId;
+  const tokenOutletId = req.outletId;
 
   try {
-    let filterClause = "";
-    let ownerClause = "";
-    let params: (string | number)[] = [];
+    let filterClause: string;
+    let params: (string | number)[];
 
-    if (outletId) {
+    if (queryOutletId) {
       filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text)";
-      params = [String(outletId)];
-    } else if (req.outletId) {
+      params = [String(queryOutletId)];
+    } else if (tokenOutletId) {
       filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text)";
-      params = [String(req.outletId)];
+      params = [String(tokenOutletId)];
     } else {
-      ownerClause = "AND o.owner_id::text = $1::text";
+      filterClause = "AND o.owner_id::text = $1::text";
       params = [String(req.userId)];
     }
 
@@ -82,7 +82,7 @@ router.get("/daily", authenticateToken, async (req: AuthRequest, res: Response):
        FROM transactions t
        LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
        WHERE t.created_at >= NOW() - INTERVAL '30 days'
-         ${filterClause}${ownerClause}
+         ${filterClause}
        GROUP BY DATE(t.created_at)
        ORDER BY date DESC
        LIMIT 30`,
@@ -97,7 +97,7 @@ router.get("/daily", authenticateToken, async (req: AuthRequest, res: Response):
       })),
     });
   } catch (err) {
-    console.error(err);
+    console.error("[Reports daily]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

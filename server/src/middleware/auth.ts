@@ -26,7 +26,6 @@ export async function authenticateToken(
 
   try {
     const secret = process.env.JWT_SECRET || "nexpos_secret";
-    // FIX: Extract outletId from JWT so kasir transactions go to the correct outlet
     const decoded = jwt.verify(token, secret) as {
       userId: string | number;
       email: string;
@@ -35,9 +34,10 @@ export async function authenticateToken(
     };
 
     if (decoded.deviceId) {
+      // BUG FIX: menggunakan make_interval() agar perkalian interval valid di PostgreSQL
       const deviceResult = await pool.query(
         `SELECT id, last_seen,
-                (last_seen IS NULL OR last_seen < NOW() - ($3::int * INTERVAL '1 day')) AS must_reactivate
+                (last_seen IS NULL OR last_seen < NOW() - make_interval(days => $3::int)) AS must_reactivate
          FROM devices
          WHERE id::text = $1::text AND owner_id::text = $2::text
          LIMIT 1`,

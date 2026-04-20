@@ -4,28 +4,18 @@ import { authenticateToken, AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
-// GET /customers - list semua customer
-router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { outletId } = req.query;
-
-  try {
-    const result = await pool.query(
-      "SELECT * FROM customers WHERE outlet_id::text = $1::text ORDER BY name ASC",
-      [String(outletId)]
-    );
-    res.json({ customers: result.rows });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Terjadi kesalahan server" });
-  }
-});
-
-// GET /customers/search?q=&outletId=
+// BUG FIX: GET /customers/search HARUS sebelum GET /:id agar tidak tertangkap wildcard
 router.get("/search", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { q, outletId } = req.query;
+  const effectiveOutletId = outletId ?? req.outletId;
 
   if (!q) {
     res.status(400).json({ message: "Parameter pencarian wajib diisi" });
+    return;
+  }
+
+  if (!effectiveOutletId) {
+    res.status(400).json({ message: "outletId wajib diisi" });
     return;
   }
 
@@ -35,25 +25,51 @@ router.get("/search", authenticateToken, async (req: AuthRequest, res: Response)
        WHERE outlet_id::text = $1::text
          AND (name ILIKE $2 OR phone ILIKE $2)
        ORDER BY name ASC`,
-      [String(outletId), `%${q}%`]
+      [String(effectiveOutletId), `%${q}%`]
     );
     res.json({ customers: result.rows });
   } catch (err) {
-    console.error(err);
+    console.error("[Customers search]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// POST /customers - tambah customer
+// BUG FIX: GET /customers - fallback ke req.outletId jika outletId tidak dikirim
+router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  const outletId = req.query.outletId ?? req.outletId;
+
+  if (!outletId) {
+    res.status(400).json({ message: "outletId wajib diisi" });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM customers WHERE outlet_id::text = $1::text ORDER BY name ASC",
+      [String(outletId)]
+    );
+    res.json({ customers: result.rows });
+  } catch (err) {
+    console.error("[Customers GET]", err);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+});
+
 router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { outletId, name, phone, address } = req.body;
+  const effectiveOutletId = outletId ?? req.outletId;
 
-  if (!name || !name.trim()) {
+  if (!name || !String(name).trim()) {
     res.status(400).json({ message: "Nama customer wajib diisi" });
     return;
   }
 
-  if (phone && !/^[0-9+\-\s]{7,20}$/.test(phone.trim())) {
+  if (!effectiveOutletId) {
+    res.status(400).json({ message: "outletId wajib diisi" });
+    return;
+  }
+
+  if (phone && !/^[0-9+\-\s]{7,20}$/.test(String(phone).trim())) {
     res.status(400).json({ message: "Nomor telepon tidak valid" });
     return;
   }
@@ -63,36 +79,36 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
       `INSERT INTO customers (outlet_id, owner_id, name, phone, address)
        VALUES ($1::text, $2::text, $3::text, $4::text, $5::text)
        RETURNING *`,
-      [outletId, req.userId, name.trim(), phone?.trim() ?? "", address?.trim() ?? ""]
+      [String(effectiveOutletId), String(req.userId), String(name).trim(), String(phone ?? "").trim(), String(address ?? "").trim()]
     );
     res.status(201).json({ customer: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("[Customers POST]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// PUT /customers/:id - edit customer
 router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { name, phone, address } = req.body;
 
-  if (!name || !name.trim()) {
+  if (!name || !String(name).trim()) {
     res.status(400).json({ message: "Nama customer wajib diisi" });
     return;
   }
 
-  if (phone && !/^[0-9+\-\s]{7,20}$/.test(phone.trim())) {
+  if (phone && !/^[0-9+\-\s]{7,20}$/.test(String(phone).trim())) {
     res.status(400).json({ message: "Nomor telepon tidak valid" });
     return;
   }
 
   try {
+    // BUG FIX: validasi kepemilikan dengan owner_id
     const result = await pool.query(
       `UPDATE customers SET name = $1, phone = $2, address = $3
-       WHERE id::text = $4::text
+       WHERE id::text = $4::text AND owner_id::text = $5::text
        RETURNING *`,
-      [name.trim(), phone?.trim() ?? "", address?.trim() ?? "", id]
+      [String(name).trim(), String(phone ?? "").trim(), String(address ?? "").trim(), id, String(req.userId)]
     );
 
     if (result.rows.length === 0) {
@@ -102,19 +118,19 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
 
     res.json({ customer: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("[Customers PUT]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// DELETE /customers/:id - hapus customer
 router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
+    // BUG FIX: validasi kepemilikan dengan owner_id
     const result = await pool.query(
-      "DELETE FROM customers WHERE id::text = $1::text RETURNING id",
-      [id]
+      "DELETE FROM customers WHERE id::text = $1::text AND owner_id::text = $2::text RETURNING id",
+      [id, String(req.userId)]
     );
 
     if (result.rows.length === 0) {
@@ -124,7 +140,7 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ message: "Customer berhasil dihapus" });
   } catch (err) {
-    console.error(err);
+    console.error("[Customers DELETE]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

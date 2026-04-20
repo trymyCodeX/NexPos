@@ -4,40 +4,43 @@ import { authenticateToken, AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
-// GET /transaction-logs - ambil log transaksi (masuk & dihapus) untuk owner
+// BUG FIX: query count menggunakan params yang benar (tanpa limit/offset)
 router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { action, outletId, limit = "100", offset = "0" } = req.query;
+  const { action, outletId } = req.query;
+  const limitNum = Math.min(parseInt(String(req.query.limit ?? "100"), 10), 500);
+  const offsetNum = Math.max(parseInt(String(req.query.offset ?? "0"), 10), 0);
 
   try {
-    const params: any[] = [String(req.userId)];
+    const filterParams: any[] = [String(req.userId)];
     const conditions: string[] = ["tl.owner_id::text = $1::text"];
 
     if (action) {
-      params.push(String(action));
-      conditions.push(`tl.action = $${params.length}`);
+      filterParams.push(String(action));
+      conditions.push(`tl.action = $${filterParams.length}`);
     }
 
     if (outletId) {
-      params.push(String(outletId));
-      conditions.push(`tl.outlet_id::text = $${params.length}::text`);
+      filterParams.push(String(outletId));
+      conditions.push(`tl.outlet_id::text = $${filterParams.length}::text`);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    params.push(parseInt(String(limit), 10));
-    params.push(parseInt(String(offset), 10));
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
+    // BUG FIX: count query menggunakan filterParams saja (tanpa limit/offset)
+    const countResult = await pool.query(
+      `SELECT COUNT(*) AS total FROM transaction_logs tl ${whereClause}`,
+      filterParams
+    );
+
+    // Data query menambahkan limit dan offset setelah filterParams
+    const dataParams = [...filterParams, limitNum, offsetNum];
     const result = await pool.query(
       `SELECT tl.*
        FROM transaction_logs tl
        ${whereClause}
        ORDER BY tl.created_at DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
-    );
-
-    const countResult = await pool.query(
-      `SELECT COUNT(*) AS total FROM transaction_logs tl ${whereClause}`,
-      params.slice(0, params.length - 2)
+       LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+      dataParams
     );
 
     res.json({
@@ -58,7 +61,7 @@ router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Prom
       total: parseInt(countResult.rows[0]?.total ?? "0", 10),
     });
   } catch (err) {
-    console.error(err);
+    console.error("[TransactionLogs GET]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

@@ -10,7 +10,11 @@ interface SuperAdminRequest extends Request {
 
 function generateToken(): string {
   const secret = process.env.JWT_SECRET || "nexpos_secret";
-  return jwt.sign({ role: "super_admin", username: process.env.SUPER_ADMIN_USERNAME || "admin" }, secret, { expiresIn: "12h" });
+  return jwt.sign(
+    { role: "super_admin", username: process.env.SUPER_ADMIN_USERNAME || "admin" },
+    secret,
+    { expiresIn: "12h" }
+  );
 }
 
 function authenticateSuperAdmin(req: SuperAdminRequest, res: Response, next: NextFunction): void {
@@ -62,7 +66,7 @@ router.get("/stats", authenticateSuperAdmin, async (_req: SuperAdminRequest, res
       totalOtpRequests: Number(otpRequests.rows[0].count),
     });
   } catch (err) {
-    console.error("[super-admin stats]", err);
+    console.error("[SuperAdmin stats]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -70,8 +74,10 @@ router.get("/stats", authenticateSuperAdmin, async (_req: SuperAdminRequest, res
 router.get("/users", authenticateSuperAdmin, async (_req: SuperAdminRequest, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.name, u.created_at, COALESCE(u.account_status, 'active') AS account_status,
-              u.penalty_reason, COALESCE(u.banned_permanent, FALSE) AS banned_permanent,
+      `SELECT u.id, u.email, u.name, u.created_at,
+              COALESCE(u.account_status, 'active') AS account_status,
+              u.penalty_reason,
+              COALESCE(u.banned_permanent, FALSE) AS banned_permanent,
               (SELECT COUNT(*) FROM outlets o WHERE o.owner_id::text = u.id::text) AS outlet_count,
               (SELECT COUNT(*) FROM devices d WHERE d.owner_id::text = u.id::text) AS device_count
        FROM users u
@@ -91,7 +97,7 @@ router.get("/users", authenticateSuperAdmin, async (_req: SuperAdminRequest, res
       })),
     });
   } catch (err) {
-    console.error("[super-admin users]", err);
+    console.error("[SuperAdmin users]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -113,7 +119,7 @@ router.get("/otp-requests", authenticateSuperAdmin, async (_req: SuperAdminReque
       })),
     });
   } catch (err) {
-    console.error("[super-admin otp]", err);
+    console.error("[SuperAdmin otp-requests]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -125,9 +131,14 @@ router.delete("/users/:id", authenticateSuperAdmin, async (req: SuperAdminReques
     await client.query("BEGIN");
     const outlets = await client.query("SELECT id, client_id FROM outlets WHERE owner_id::text = $1::text", [userId]);
     for (const outlet of outlets.rows) {
-      await client.query("DELETE FROM transactions WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text", [String(outlet.id), String(outlet.client_id)]);
+      await client.query(
+        "DELETE FROM transactions WHERE outlet_id::text = $1::text OR outlet_id::text = $2::text",
+        [String(outlet.id), String(outlet.client_id)]
+      );
     }
     await client.query("DELETE FROM notifications WHERE owner_id::text = $1::text", [userId]);
+    await client.query("DELETE FROM services WHERE owner_id::text = $1::text", [userId]);
+    await client.query("DELETE FROM customers WHERE owner_id::text = $1::text", [userId]);
     await client.query("DELETE FROM devices WHERE owner_id::text = $1::text", [userId]);
     await client.query("DELETE FROM outlets WHERE owner_id::text = $1::text", [userId]);
     const deleted = await client.query("DELETE FROM users WHERE id::text = $1::text RETURNING id", [userId]);
@@ -139,7 +150,7 @@ router.delete("/users/:id", authenticateSuperAdmin, async (req: SuperAdminReques
     res.json({ message: "Akun berhasil dihapus permanen" });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("[super-admin delete user]", err);
+    console.error("[SuperAdmin delete user]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   } finally {
     client.release();
@@ -159,7 +170,7 @@ router.post("/users/:id/ban", authenticateSuperAdmin, async (req: SuperAdminRequ
     }
     res.json({ message: "User berhasil dibanned" });
   } catch (err) {
-    console.error("[super-admin ban]", err);
+    console.error("[SuperAdmin ban]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -176,7 +187,7 @@ router.post("/users/:id/unban", authenticateSuperAdmin, async (req: SuperAdminRe
     }
     res.json({ message: "Banned user berhasil dibuka" });
   } catch (err) {
-    console.error("[super-admin unban]", err);
+    console.error("[SuperAdmin unban]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
@@ -194,7 +205,7 @@ router.post("/notifications", authenticateSuperAdmin, async (req: SuperAdminRequ
     );
     res.status(201).json({ message: "Notifikasi berhasil dibuat" });
   } catch (err) {
-    console.error("[super-admin notification]", err);
+    console.error("[SuperAdmin notification]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });

@@ -23,16 +23,8 @@ export async function sendOtpEmail(to: string, otp: string, name: string): Promi
   const safeOtp = escapeHtml(otp);
 
   const body = {
-    sender: {
-      email: senderEmail,
-      name: senderName,
-    },
-    to: [
-      {
-        email: to,
-        name,
-      },
-    ],
+    sender: { email: senderEmail, name: senderName },
+    to: [{ email: to, name }],
     subject: "Kode OTP Reset Password NexPos",
     htmlContent: `
       <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;border:1px solid #e0e0e0;border-radius:12px">
@@ -50,27 +42,10 @@ export async function sendOtpEmail(to: string, otp: string, name: string): Promi
     `,
   };
 
-  try {
-    const response = await axios.post(BREVO_EMAIL_URL, body, {
-      headers: {
-        "api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      timeout: 15_000,
-    });
+  const response = await axios.post(BREVO_EMAIL_URL, body, {
+    headers: { "api-key": apiKey, "Content-Type": "application/json" },
+    timeout: 15_000,
+  });
 
-    console.info("[Email] OTP terkirim via Brevo API:", {
-      to,
-      messageId: response.data?.messageId,
-    });
-  } catch (err: any) {
-    const status = err?.response?.status;
-    const message = err?.response?.data?.message || err?.message || "Gagal mengirim email OTP.";
-    console.error("[Email] Gagal kirim OTP via Brevo API:", {
-      to,
-      status,
-      message,
-    });
-    throw new Error(`Brevo API error${status ? ` (${status})` : ""}: ${message}`);
-  }
+  console.info("[Email] OTP terkirim via Brevo API:", { to, messageId: response.data?.messageId });
 }
