@@ -55,7 +55,7 @@
       this.createdAt,
     });
     factory OutletInfo.fromJson(Map<String, dynamic> j) => OutletInfo(
-          id: j['id'] ?? 0,
+          id: j['id']?.toString() ?? '0',
           name: j['name'] ?? '',
           activationCode: j['activationCode'] ?? j['activation_code'] ?? '',
           deviceCount: j['deviceCount'] ?? j['device_count'],
@@ -98,7 +98,7 @@
 
   // ─── Transaction ────────────────────────────────────────
   class TransactionInfo {
-    final int id;
+    final String id;
     final String customerName;
     final String outletName;
     // BUG FIX: server mengirim 'totalAmount', bukan 'totalPrice'
