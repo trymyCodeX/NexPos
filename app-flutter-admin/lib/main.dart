@@ -12,6 +12,7 @@ import 'screens/transactions/transactions_screen.dart';
 import 'screens/reports/reports_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/account/account_screen.dart';
+import 'screens/transactions/transaction_logs_screen.dart';
 import 'screens/superadmin/superadmin_login_screen.dart';
 import 'screens/superadmin/superadmin_dashboard_screen.dart';
 
@@ -33,6 +34,7 @@ class NexPosAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => TransactionLogProvider()),
         ChangeNotifierProvider(create: (_) => SuperAdminProvider()),
       ],
       child: MaterialApp(
@@ -54,6 +56,7 @@ class NexPosAdminApp extends StatelessWidget {
           '/outlets': (_) => const OutletsScreen(),
           '/devices': (_) => const DevicesScreen(),
           '/transactions': (_) => const TransactionsScreen(),
+          '/transaction-logs': (_) => const TransactionLogsScreen(),
           '/reports': (_) => const ReportsScreen(),
           '/notifications': (_) => const NotificationsScreen(),
           '/account': (_) => const AccountScreen(),

@@ -155,6 +155,25 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_hash VARCHAR(64)",
   "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_request_count INTEGER DEFAULT 0",
   "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_last_request_at TIMESTAMP",
+  // New: min_quantity untuk layanan, transaction_logs untuk audit
+  "ALTER TABLE services ADD COLUMN IF NOT EXISTS min_quantity FLOAT",
+  `CREATE TABLE IF NOT EXISTS transaction_logs (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER,
+    action VARCHAR(50) NOT NULL,
+    owner_id VARCHAR(255),
+    outlet_id VARCHAR(255),
+    outlet_name VARCHAR(255),
+    customer_name VARCHAR(255),
+    service_name VARCHAR(255),
+    quantity FLOAT,
+    total_amount INTEGER,
+    status VARCHAR(50),
+    actor VARCHAR(255),
+    actor_type VARCHAR(50),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`,
 ];
 
 export async function ensureRuntimeSchema() {

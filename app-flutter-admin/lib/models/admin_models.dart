@@ -266,3 +266,49 @@ class OtpRequestInfo {
         createdAt: j['createdAt'] ?? j['created_at'],
       );
 }
+
+// ─── Transaction Log ─────────────────────────────────────
+class TransactionLogInfo {
+  final int id;
+  final int? transactionId;
+  final String action;
+  final String? outletName;
+  final String? customerName;
+  final String? serviceName;
+  final num? quantity;
+  final num? totalAmount;
+  final String? status;
+  final String? actorType;
+  final String? notes;
+  final String? createdAt;
+
+  TransactionLogInfo({
+    required this.id,
+    this.transactionId,
+    required this.action,
+    this.outletName,
+    this.customerName,
+    this.serviceName,
+    this.quantity,
+    this.totalAmount,
+    this.status,
+    this.actorType,
+    this.notes,
+    this.createdAt,
+  });
+
+  factory TransactionLogInfo.fromJson(Map<String, dynamic> j) => TransactionLogInfo(
+        id: j['id'] ?? 0,
+        transactionId: j['transactionId'] ?? j['transaction_id'],
+        action: j['action'] ?? '',
+        outletName: j['outletName'] ?? j['outlet_name'],
+        customerName: j['customerName'] ?? j['customer_name'],
+        serviceName: j['serviceName'] ?? j['service_name'],
+        quantity: j['quantity'],
+        totalAmount: j['totalAmount'] ?? j['total_amount'],
+        status: j['status'],
+        actorType: j['actorType'] ?? j['actor_type'],
+        notes: j['notes'],
+        createdAt: j['createdAt'] ?? j['created_at'],
+      );
+}

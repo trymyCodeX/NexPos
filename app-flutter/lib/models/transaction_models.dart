@@ -81,8 +81,9 @@ class ServiceInfo {
   final int price;
   final String unit;
   final String? outletId;
+  final double? minQuantity;
 
-  ServiceInfo({required this.id, required this.name, required this.price, required this.unit, this.outletId});
+  ServiceInfo({required this.id, required this.name, required this.price, required this.unit, this.outletId, this.minQuantity});
 
   factory ServiceInfo.fromJson(Map<String, dynamic> json) => ServiceInfo(
         id: json['id']?.toString() ?? '',
@@ -90,6 +91,7 @@ class ServiceInfo {
         price: _parseInt(json['price']),
         unit: json['unit'] ?? 'kg',
         outletId: json['outlet_id']?.toString(),
+        minQuantity: json['min_quantity'] != null ? _parseDouble(json['min_quantity']) : null,
       );
 }
 

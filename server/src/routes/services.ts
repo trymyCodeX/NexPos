@@ -22,7 +22,7 @@ router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Prom
 
 // POST /services - tambah layanan
 router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { outletId, name, price, unit } = req.body;
+  const { outletId, name, price, unit, minQuantity } = req.body;
 
   if (!name || !name.trim()) {
     res.status(400).json({ message: "Nama layanan wajib diisi" });
@@ -35,12 +35,18 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
     return;
   }
 
+  const minQty = minQuantity != null && minQuantity !== "" ? Number(minQuantity) : null;
+  if (minQty !== null && (isNaN(minQty) || minQty <= 0)) {
+    res.status(400).json({ message: "Minimal quantity harus lebih dari 0" });
+    return;
+  }
+
   try {
     const result = await pool.query(
-      `INSERT INTO services (outlet_id, owner_id, name, price, unit)
-       VALUES ($1::text, $2::text, $3::text, $4::integer, $5::text)
+      `INSERT INTO services (outlet_id, owner_id, name, price, unit, min_quantity)
+       VALUES ($1::text, $2::text, $3::text, $4::integer, $5::text, $6)
        RETURNING *`,
-      [outletId, req.userId, name.trim(), priceNum, unit?.trim() ?? "kg"]
+      [outletId, req.userId, name.trim(), priceNum, unit?.trim() ?? "kg", minQty]
     );
     res.status(201).json({ service: result.rows[0] });
   } catch (err) {
@@ -52,7 +58,7 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
 // PUT /services/:id - edit layanan
 router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { name, price, unit } = req.body;
+  const { name, price, unit, minQuantity } = req.body;
 
   if (!name || !name.trim()) {
     res.status(400).json({ message: "Nama layanan wajib diisi" });
@@ -65,12 +71,18 @@ router.put("/:id", authenticateToken, async (req: AuthRequest, res: Response): P
     return;
   }
 
+  const minQty = minQuantity != null && minQuantity !== "" ? Number(minQuantity) : null;
+  if (minQty !== null && (isNaN(minQty) || minQty <= 0)) {
+    res.status(400).json({ message: "Minimal quantity harus lebih dari 0" });
+    return;
+  }
+
   try {
     const result = await pool.query(
-      `UPDATE services SET name = $1, price = $2, unit = $3
-       WHERE id::text = $4::text
+      `UPDATE services SET name = $1, price = $2, unit = $3, min_quantity = $4
+       WHERE id::text = $5::text
        RETURNING *`,
-      [name.trim(), priceNum, unit?.trim() ?? "kg", id]
+      [name.trim(), priceNum, unit?.trim() ?? "kg", minQty, id]
     );
 
     if (result.rows.length === 0) {

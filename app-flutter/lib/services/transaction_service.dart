@@ -20,8 +20,7 @@ class TransactionService {
   }
 
   Future<TransactionInfo> updateStatus(int transactionId, String status) async {
-    final data = await _api.put('${AppConstants.apiTransactions}/status', {
-      'transactionId': transactionId,
+    final data = await _api.put('${AppConstants.apiTransactions}/$transactionId/status', {
       'status': status,
     });
     return TransactionInfo.fromJson(data);
@@ -37,22 +36,26 @@ class TransactionService {
     return list.map((e) => ServiceInfo.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<ServiceInfo> createService(int outletId, String name, int price, String unit) async {
-    final data = await _api.post(AppConstants.apiServices, {
+  Future<ServiceInfo> createService(int outletId, String name, int price, String unit, {double? minQuantity}) async {
+    final body = <String, dynamic>{
       'outletId': outletId,
       'name': name,
       'price': price,
       'unit': unit,
-    });
+    };
+    if (minQuantity != null) body['minQuantity'] = minQuantity;
+    final data = await _api.post(AppConstants.apiServices, body);
     return ServiceInfo.fromJson(data['service'] as Map<String, dynamic>);
   }
 
-  Future<ServiceInfo> updateService(String id, String name, int price, String unit) async {
-    final data = await _api.put('${AppConstants.apiServices}/$id', {
+  Future<ServiceInfo> updateService(String id, String name, int price, String unit, {double? minQuantity}) async {
+    final body = <String, dynamic>{
       'name': name,
       'price': price,
       'unit': unit,
-    });
+      'minQuantity': minQuantity,
+    };
+    final data = await _api.put('${AppConstants.apiServices}/$id', body);
     return ServiceInfo.fromJson(data['service'] as Map<String, dynamic>);
   }
 

@@ -43,6 +43,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Log Transaksi',
+            onPressed: () => Navigator.pushNamed(context, '/transaction-logs'),
+          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: () => provider.load()),
         ],
       ),

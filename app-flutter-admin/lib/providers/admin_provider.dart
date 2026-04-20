@@ -426,6 +426,38 @@ class NotificationProvider extends ChangeNotifier {
   }
 }
 
+// ─── Transaction Log Provider ────────────────────────────────────────────────
+class TransactionLogProvider extends ChangeNotifier {
+  bool isLoading = false;
+  String? error;
+  List<TransactionLogInfo> logs = [];
+  String? filterAction;
+
+  Future<void> load({String? action}) async {
+    isLoading = true;
+    error = null;
+    filterAction = action;
+    notifyListeners();
+    try {
+      final token = await _session.getToken();
+      final queryParts = <String>[];
+      if (action != null && action.isNotEmpty) queryParts.add('action=$action');
+      queryParts.add('limit=200');
+      final path = '/api/transaction-logs${queryParts.isNotEmpty ? '?${queryParts.join('&')}' : ''}';
+      final data = await _api.get(path, token: token);
+      logs = (data['logs'] as List? ?? [])
+          .map((e) => TransactionLogInfo.fromJson(e))
+          .toList();
+      isLoading = false;
+      notifyListeners();
+    } on ApiException catch (e) {
+      isLoading = false;
+      error = e.message;
+      notifyListeners();
+    }
+  }
+}
+
 // ─── SuperAdmin Provider ─────────────────────────────────────────────────────
 class SuperAdminProvider extends ChangeNotifier {
   bool isLoading = false;

@@ -144,9 +144,9 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 
   try {
-    // Ambil harga dari tabel services (otomatis)
+    // Ambil harga dari tabel services (otomatis), termasuk min_quantity
     const serviceResult = await pool.query(
-      "SELECT id, name, price FROM services WHERE id::text = $1::text",
+      "SELECT id, name, price, min_quantity FROM services WHERE id::text = $1::text",
       [serviceId]
     );
 
@@ -157,18 +157,58 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
 
     const service = serviceResult.rows[0];
     const price = service.price ?? 0;
-    const total_amount = price * qty; // harga × quantity = total otomatis
+    const minQty = service.min_quantity ? Number(service.min_quantity) : null;
+
+    // Jika ada minimal quantity dan input kurang dari minimal, gunakan minimal
+    const effectiveQty = minQty !== null && qty < minQty ? minQty : qty;
+    const total_amount = price * effectiveQty;
+
+    // Ambil info customer dan outlet untuk logging
+    const customerResult = await pool.query(
+      "SELECT name FROM customers WHERE id::text = $1::text LIMIT 1",
+      [customerId]
+    );
+    const outletResult = await pool.query(
+      "SELECT name FROM outlets WHERE id::text = $1::text OR client_id::text = $1::text LIMIT 1",
+      [String(outletId)]
+    );
 
     const result = await pool.query(
       `INSERT INTO transactions
          (outlet_id, owner_id, customer_id, service_id, quantity, total_amount, status)
        VALUES ($1::text, $2::text, $3::uuid, $4::uuid, $5::float, $6::integer, 'diterima')
        RETURNING *`,
-      [outletId, req.userId, customerId, serviceId, qty, total_amount]
+      [outletId, req.userId, customerId, serviceId, effectiveQty, total_amount]
     );
 
-    const transaction = toTransactionPayload(result.rows[0]);
-    res.status(201).json({ ...transaction, transaction: result.rows[0] });
+    const tx = result.rows[0];
+
+    // Tulis log transaksi masuk
+    try {
+      await pool.query(
+        `INSERT INTO transaction_logs
+           (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
+         VALUES ($1, 'created', $2, $3, $4, $5, $6, $7, $8, 'diterima', 'kasir', $9)`,
+        [
+          tx.id,
+          String(req.userId),
+          String(outletId),
+          outletResult.rows[0]?.name ?? null,
+          customerResult.rows[0]?.name ?? null,
+          service.name,
+          effectiveQty,
+          total_amount,
+          minQty !== null && qty < minQty
+            ? `Input ${qty}, dihitung dari minimal ${minQty}`
+            : null,
+        ]
+      );
+    } catch (logErr) {
+      console.warn("[LOG] Gagal simpan log transaksi:", logErr);
+    }
+
+    const transaction = toTransactionPayload(tx);
+    res.status(201).json({ ...transaction, transaction: tx });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
@@ -296,8 +336,14 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
 
   try {
     const check = await pool.query(
-      `SELECT t.id FROM transactions t
+      `SELECT t.id, t.owner_id, t.outlet_id, t.customer_id, t.service_id, t.quantity, t.total_amount, t.status,
+              c.name AS customer_name,
+              s.name AS service_name,
+              o.name AS outlet_name
+       FROM transactions t
        LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
+       LEFT JOIN customers c ON t.customer_id::text = c.id::text
+       LEFT JOIN services s ON t.service_id::text = s.id::text
        WHERE t.id::text = $1::text
          AND (
            t.owner_id::text = $2::text
@@ -306,12 +352,12 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
            OR o.id::text = $3::text
            OR o.client_id::text = $3::text
            OR EXISTS (
-             SELECT 1 FROM customers c
-             WHERE t.customer_id::text = c.id::text AND c.owner_id::text = $2::text
+             SELECT 1 FROM customers c2
+             WHERE t.customer_id::text = c2.id::text AND c2.owner_id::text = $2::text
            )
            OR EXISTS (
-             SELECT 1 FROM services s
-             WHERE t.service_id::text = s.id::text AND s.owner_id::text = $2::text
+             SELECT 1 FROM services s2
+             WHERE t.service_id::text = s2.id::text AND s2.owner_id::text = $2::text
            )
          )`,
       [id, String(req.userId), req.outletId ? String(req.outletId) : ""]
@@ -322,7 +368,32 @@ router.delete("/:id", authenticateToken, async (req: AuthRequest, res: Response)
       return;
     }
 
+    const txData = check.rows[0];
+
     await pool.query("DELETE FROM transactions WHERE id::text = $1::text", [id]);
+
+    // Tulis log transaksi dihapus
+    try {
+      await pool.query(
+        `INSERT INTO transaction_logs
+           (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
+         VALUES ($1, 'deleted', $2, $3, $4, $5, $6, $7, $8, $9, 'kasir', 'Transaksi dihapus')`,
+        [
+          parseInt(id),
+          String(req.userId),
+          txData.outlet_id,
+          txData.outlet_name,
+          txData.customer_name,
+          txData.service_name,
+          txData.quantity,
+          txData.total_amount,
+          txData.status,
+        ]
+      );
+    } catch (logErr) {
+      console.warn("[LOG] Gagal simpan log hapus transaksi:", logErr);
+    }
+
     res.json({ message: "Transaksi berhasil dihapus" });
   } catch (err) {
     console.error(err);

@@ -213,9 +213,9 @@ class TransactionProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> createService(String name, int price, String unit) async {
+  Future<bool> createService(String name, int price, String unit, {double? minQuantity}) async {
     try {
-      await _service.createService(outletId, name, price, unit);
+      await _service.createService(outletId, name, price, unit, minQuantity: minQuantity);
       await loadServices();
       return true;
     } catch (e) {
@@ -225,9 +225,9 @@ class TransactionProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateService(String id, String name, int price, String unit) async {
+  Future<bool> updateService(String id, String name, int price, String unit, {double? minQuantity}) async {
     try {
-      await _service.updateService(id, name, price, unit);
+      await _service.updateService(id, name, price, unit, minQuantity: minQuantity);
       await loadServices();
       return true;
     } catch (e) {

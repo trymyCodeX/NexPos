@@ -9,6 +9,7 @@ import transactionsRouter from "./routes/transactions";
 import superAdminRouter from "./routes/superAdmin";
 import notificationsRouter from "./routes/notifications";
 import reportsRouter from "./routes/reports";
+import transactionLogsRouter from "./routes/transactionLogs";
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use("/api/transactions", transactionsRouter);
 app.use("/api/super-admin", superAdminRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/transaction-logs", transactionLogsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan" });

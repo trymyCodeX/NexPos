@@ -124,6 +124,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   () => Navigator.pushNamed(context, '/devices').then((_) => _load())),
               _MenuCard('Transaksi', Icons.receipt_long, Colors.orange,
                   () => Navigator.pushNamed(context, '/transactions').then((_) => _load())),
+              _MenuCard('Log Transaksi', Icons.history, Colors.indigo,
+                  () => Navigator.pushNamed(context, '/transaction-logs')),
               _MenuCard('Laporan', Icons.bar_chart, Colors.purple,
                   () => Navigator.pushNamed(context, '/reports')),
               _MenuCard('Notifikasi', Icons.notifications, Colors.red,

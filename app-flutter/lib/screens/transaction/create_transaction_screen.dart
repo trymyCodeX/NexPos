@@ -28,9 +28,21 @@ class _CreateTransactionScreenState extends State<CreateTransactionScreen> {
     super.dispose();
   }
 
+  double get _effectiveQty {
+    final qty = double.tryParse(_qtyController.text) ?? 0;
+    final minQty = _selectedService?.minQuantity;
+    if (minQty != null && qty < minQty && qty > 0) return minQty;
+    return qty;
+  }
+
   double get _total {
-    final qty = int.tryParse(_qtyController.text) ?? 0;
-    return (_selectedService?.price ?? 0) * qty.toDouble();
+    return (_selectedService?.price ?? 0) * _effectiveQty;
+  }
+
+  bool get _isMinQtyApplied {
+    final qty = double.tryParse(_qtyController.text) ?? 0;
+    final minQty = _selectedService?.minQuantity;
+    return minQty != null && qty > 0 && qty < minQty;
   }
 
   @override
@@ -159,31 +171,55 @@ class _CreateTransactionScreenState extends State<CreateTransactionScreen> {
 
               // Total
               if (_selectedService != null && _selectedCustomer != null)
-                Card(
-                  color: AppTheme.primaryBlueLight,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                Column(
+                  children: [
+                    if (_isMinQtyApplied)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.orange.withOpacity(0.4)),
+                        ),
+                        child: Text(
+                          'Input ${_qtyController.text} ${_selectedService!.unit}, minimal ${_selectedService!.minQuantity!.toStringAsFixed(_selectedService!.minQuantity! % 1 == 0 ? 0 : 1)} ${_selectedService!.unit}. Harga dihitung dari minimal.',
+                          style: const TextStyle(color: AppTheme.orange, fontSize: 12),
+                        ),
+                      ),
+                    Card(
+                      color: AppTheme.primaryBlueLight,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Pelanggan: ${_selectedCustomer!.name}', style: const TextStyle(color: AppTheme.primaryBlue)),
-                            Text('Layanan: ${_selectedService!.name}', style: const TextStyle(color: AppTheme.primaryBlue)),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Pelanggan: ${_selectedCustomer!.name}', style: const TextStyle(color: AppTheme.primaryBlue)),
+                                Text('Layanan: ${_selectedService!.name}', style: const TextStyle(color: AppTheme.primaryBlue)),
+                                if (_isMinQtyApplied)
+                                  Text(
+                                    'Qty efektif: ${_effectiveQty.toStringAsFixed(_effectiveQty % 1 == 0 ? 0 : 1)} ${_selectedService!.unit}',
+                                    style: const TextStyle(color: AppTheme.orange, fontSize: 12),
+                                  ),
+                              ],
+                            ),
+                            Text(
+                              FormatUtils.currency(_total),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primaryBlue,
+                              ),
+                            ),
                           ],
                         ),
-                        Text(
-                          FormatUtils.currency(_total),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryBlue,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               const SizedBox(height: 8),
 
@@ -233,7 +269,7 @@ class _CreateTransactionScreenState extends State<CreateTransactionScreen> {
     final success = await provider.createTransaction(
       _selectedCustomer!.id,
       _selectedService!.id,
-      qty,
+      qty, // server akan handle min_quantity
     );
 
     if (mounted) {

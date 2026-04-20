@@ -44,7 +44,11 @@ class ServicesScreen extends StatelessWidget {
                             child: Icon(Icons.local_laundry_service, color: AppTheme.primaryBlue, size: 20),
                           ),
                           title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text('${FormatUtils.currency(s.price.toDouble())} / ${s.unit}'),
+                          subtitle: Text(
+                            s.minQuantity != null
+                                ? '${FormatUtils.currency(s.price.toDouble())} / ${s.unit}  •  min. ${s.minQuantity!.toStringAsFixed(s.minQuantity! % 1 == 0 ? 0 : 1)} ${s.unit}'
+                                : '${FormatUtils.currency(s.price.toDouble())} / ${s.unit}',
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -118,6 +122,7 @@ class _ServiceDialogState extends State<_ServiceDialog> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _priceCtrl;
   late final TextEditingController _unitCtrl;
+  late final TextEditingController _minQtyCtrl;
   bool _loading = false;
   String? _error;
 
@@ -127,6 +132,12 @@ class _ServiceDialogState extends State<_ServiceDialog> {
     _nameCtrl = TextEditingController(text: widget.service?.name ?? '');
     _priceCtrl = TextEditingController(text: widget.service?.price.toString() ?? '');
     _unitCtrl = TextEditingController(text: widget.service?.unit ?? 'kg');
+    final minQty = widget.service?.minQuantity;
+    _minQtyCtrl = TextEditingController(
+      text: minQty != null
+          ? (minQty % 1 == 0 ? minQty.toInt().toString() : minQty.toString())
+          : '',
+    );
   }
 
   @override
@@ -134,6 +145,7 @@ class _ServiceDialogState extends State<_ServiceDialog> {
     _nameCtrl.dispose();
     _priceCtrl.dispose();
     _unitCtrl.dispose();
+    _minQtyCtrl.dispose();
     super.dispose();
   }
 
@@ -141,24 +153,39 @@ class _ServiceDialogState extends State<_ServiceDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.service == null ? 'Tambah Layanan' : 'Edit Layanan'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Nama Layanan')),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _priceCtrl,
-            decoration: const InputDecoration(labelText: 'Harga (Rp)', prefixText: 'Rp '),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          ),
-          const SizedBox(height: 8),
-          TextField(controller: _unitCtrl, decoration: const InputDecoration(labelText: 'Satuan (kg, pcs, dll)')),
-          if (_error != null) ...[
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Nama Layanan')),
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: AppTheme.red, fontSize: 12)),
+            TextField(
+              controller: _priceCtrl,
+              decoration: const InputDecoration(labelText: 'Harga (Rp)', prefixText: 'Rp '),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            ),
+            const SizedBox(height: 8),
+            TextField(controller: _unitCtrl, decoration: const InputDecoration(labelText: 'Satuan (kg, pcs, dll)')),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _minQtyCtrl,
+              decoration: InputDecoration(
+                labelText: 'Minimal Quantity (opsional)',
+                hintText: 'Contoh: 3',
+                helperText: 'Jika kurang dari minimal, harga dihitung dari minimal',
+                helperMaxLines: 2,
+                suffixText: _unitCtrl.text.trim().isEmpty ? 'unit' : _unitCtrl.text.trim(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: AppTheme.red, fontSize: 12)),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
@@ -176,18 +203,24 @@ class _ServiceDialogState extends State<_ServiceDialog> {
     final name = _nameCtrl.text.trim();
     final price = int.tryParse(_priceCtrl.text) ?? 0;
     final unit = _unitCtrl.text.trim();
+    final minQtyText = _minQtyCtrl.text.trim();
+    final minQty = minQtyText.isEmpty ? null : double.tryParse(minQtyText);
 
     if (name.isEmpty) { setState(() => _error = 'Nama layanan wajib diisi'); return; }
     if (price <= 0) { setState(() => _error = 'Harga harus lebih dari 0'); return; }
     if (unit.isEmpty) { setState(() => _error = 'Satuan wajib diisi'); return; }
+    if (minQtyText.isNotEmpty && (minQty == null || minQty <= 0)) {
+      setState(() => _error = 'Minimal quantity harus lebih dari 0');
+      return;
+    }
 
     setState(() { _loading = true; _error = null; });
 
     bool ok;
     if (widget.service == null) {
-      ok = await widget.provider.createService(name, price, unit);
+      ok = await widget.provider.createService(name, price, unit, minQuantity: minQty);
     } else {
-      ok = await widget.provider.updateService(widget.service!.id, name, price, unit);
+      ok = await widget.provider.updateService(widget.service!.id, name, price, unit, minQuantity: minQty);
     }
 
     if (mounted) {
