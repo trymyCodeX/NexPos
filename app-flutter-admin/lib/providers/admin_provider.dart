@@ -269,6 +269,11 @@ import 'package:flutter/material.dart';
         isLoading = false;
         error = e.message;
         notifyListeners();
+      } catch (e) {
+        // FIX: tangkap semua exception (termasuk parsing error) agar isLoading tidak stuck forever
+        isLoading = false;
+        error = 'Terjadi kesalahan: ${e.toString()}';
+        notifyListeners();
       }
     }
 
@@ -353,11 +358,11 @@ import 'package:flutter/material.dart';
     }
 
     // FIX #7: Admin bisa update status transaksi
-    Future<bool> updateStatus(int transactionId, String status) async {
+    Future<bool> updateStatus(String transactionId, String status) async {
       try {
         final token = await _session.getToken();
         await _api.put(
-          '/api/transactions/$transactionId/status',
+          '/api/transactions/${transactionId}/status',
           {'status': status},
           token: token,
         );
@@ -372,10 +377,10 @@ import 'package:flutter/material.dart';
     }
 
     // FIX #7: Admin bisa hapus transaksi
-    Future<bool> deleteTransaction(int id) async {
+    Future<bool> deleteTransaction(String id) async {
       try {
         final token = await _session.getToken();
-        await _api.delete('/api/transactions/$id', token: token);
+        await _api.delete('/api/transactions/${id}', token: token);
         message = 'Transaksi berhasil dihapus';
         await load(outletId: filterOutletId);
         return true;
