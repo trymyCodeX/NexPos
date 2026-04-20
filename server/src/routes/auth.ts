@@ -215,7 +215,18 @@ router.delete("/account", async (req: Request, res: Response): Promise<void> => 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("DELETE FROM transactions WHERE outlet_id IN (SELECT id::text FROM outlets WHERE owner_id::text = $1::text)", [userId]);
+      await client.query(
+        "DELETE FROM transactions WHERE outlet_id IN (SELECT id::text FROM outlets WHERE owner_id::text = $1::text)",
+        [userId]
+      );
+      await client.query(
+        "DELETE FROM services WHERE outlet_id IN (SELECT id::text FROM outlets WHERE owner_id::text = $1::text)",
+        [userId]
+      );
+      await client.query(
+        "DELETE FROM customers WHERE outlet_id IN (SELECT id::text FROM outlets WHERE owner_id::text = $1::text)",
+        [userId]
+      );
       await client.query("DELETE FROM devices WHERE owner_id::text = $1::text", [userId]);
       await client.query("DELETE FROM outlets WHERE owner_id::text = $1::text", [userId]);
       await client.query("DELETE FROM users WHERE id::text = $1::text", [userId]);
@@ -286,7 +297,7 @@ router.post("/forgot-password", async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 1000000).toString();
     const otpHash = hashOtp(otp, normalizedEmail);
     const expiresAt = new Date(now + 10 * 60 * 1000);
     const newCount = requestCount + 1;
