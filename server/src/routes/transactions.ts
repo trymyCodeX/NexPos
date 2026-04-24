@@ -39,7 +39,7 @@ function normalizeStatus(value: unknown): string | null {
 
 function toTransactionPayload(t: any) {
   return {
-    id: t.id !== null && t.id !== undefined ? t.id : 0,
+    id: safeInt(t.id),
     outletId: safeInt(t.outlet_client_id ?? t.outlet_id),
     outletName: t.outlet_name ?? null,
     customerId: t.customer_id,
@@ -73,12 +73,9 @@ const TX_JOIN_SELECT = `
   LEFT JOIN outlets o ON t.outlet_id::text = o.id::text OR t.outlet_id::text = o.client_id::text
 `;
 
-// FIX #2: Tambah pagination (limit/offset) agar tidak load semua data sekaligus
 router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const queryOutletId = req.query.outletId;
   const tokenOutletId = req.outletId;
-  const limit = Math.min(parseInt(String(req.query.limit ?? "100"), 10), 500);
-  const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10), 0);
 
   try {
     let result;
@@ -86,22 +83,22 @@ router.get("/", authenticateToken, async (req: AuthRequest, res: Response): Prom
       result = await pool.query(
         `${TX_JOIN_SELECT}
          WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text
-         ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
-        [String(queryOutletId), limit, offset]
+         ORDER BY t.created_at DESC`,
+        [String(queryOutletId)]
       );
     } else if (tokenOutletId) {
       result = await pool.query(
         `${TX_JOIN_SELECT}
          WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text
-         ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
-        [String(tokenOutletId), limit, offset]
+         ORDER BY t.created_at DESC`,
+        [String(tokenOutletId)]
       );
     } else {
       result = await pool.query(
         `${TX_JOIN_SELECT}
          WHERE o.owner_id::text = $1::text
-         ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
-        [String(req.userId), limit, offset]
+         ORDER BY t.created_at DESC`,
+        [String(req.userId)]
       );
     }
 
@@ -127,13 +124,33 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 
   try {
-    const serviceResult = await pool.query(
-      "SELECT id, name, price, min_quantity FROM services WHERE id::text = $1::text",
-      [serviceId]
+    // BUG FIX: validasi outlet milik user yang sedang login
+    const outletResult = await pool.query(
+      "SELECT id, name FROM outlets WHERE (id::text = $1::text OR client_id::text = $1::text) AND owner_id::text = $2::text LIMIT 1",
+      [String(outletId), String(req.userId)]
     );
+    if (!outletResult.rows.length) {
+      res.status(403).json({ message: "Outlet tidak ditemukan atau bukan milik Anda" });
+      return;
+    }
 
+    // BUG FIX: validasi service milik user yang sedang login
+    const serviceResult = await pool.query(
+      "SELECT id, name, price, min_quantity FROM services WHERE id::text = $1::text AND owner_id::text = $2::text",
+      [serviceId, String(req.userId)]
+    );
     if (!serviceResult.rows.length) {
-      res.status(400).json({ message: "Layanan tidak ditemukan" });
+      res.status(400).json({ message: "Layanan tidak ditemukan atau bukan milik Anda" });
+      return;
+    }
+
+    // BUG FIX: validasi customer milik user yang sedang login
+    const customerResult = await pool.query(
+      "SELECT name FROM customers WHERE id::text = $1::text AND owner_id::text = $2::text LIMIT 1",
+      [customerId, String(req.userId)]
+    );
+    if (!customerResult.rows.length) {
+      res.status(400).json({ message: "Customer tidak ditemukan atau bukan milik Anda" });
       return;
     }
 
@@ -141,57 +158,40 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
     const price = service.price ?? 0;
     const minQty = service.min_quantity ? Number(service.min_quantity) : null;
     const effectiveQty = minQty !== null && qty < minQty ? minQty : qty;
-    const total_amount = price * effectiveQty;
+    // BUG FIX: Math.round agar tidak error saat insert ke kolom INTEGER (qty desimal x harga)
+    const total_amount = Math.round(price * effectiveQty);
 
-    const customerResult = await pool.query(
-      "SELECT name FROM customers WHERE id::text = $1::text LIMIT 1",
-      [customerId]
-    );
-    const outletResult = await pool.query(
-      "SELECT name FROM outlets WHERE id::text = $1::text OR client_id::text = $1::text LIMIT 1",
-      [String(outletId)]
-    );
-
-    const customerName = customerResult.rows[0]?.name ?? null;
-    const outletName = outletResult.rows[0]?.name ?? null;
-
-    // FIX #5: Isi kolom legacy 'customer' dan 'service' (text) agar tidak NULL
     const result = await pool.query(
       `INSERT INTO transactions
-         (outlet_id, owner_id, customer_id, service_id, customer, service, quantity, total_amount, status)
-       VALUES ($1::text, $2::text, $3::uuid, $4::uuid, $5::text, $6::text, $7::float, $8::integer, 'diterima')
-       RETURNING id`,
-      [String(outletId), String(req.userId), customerId, serviceId, customerName, service.name, effectiveQty, total_amount]
+         (outlet_id, owner_id, customer_id, service_id, quantity, total_amount, status)
+       VALUES ($1::text, $2::text, $3::uuid, $4::uuid, $5::float, $6::integer, 'diterima')
+       RETURNING *`,
+      [String(outletId), String(req.userId), customerId, serviceId, effectiveQty, total_amount]
     );
 
-    const insertedId = result.rows[0].id;
-
-    // FIX #4: Fetch ulang dengan JOIN agar response berisi nama customer, layanan, outlet
-    const fullTxResult = await pool.query(
-      `${TX_JOIN_SELECT} WHERE t.id = $1`,
-      [insertedId]
-    );
-    const tx = fullTxResult.rows[0];
+    const tx = result.rows[0];
 
     pool.query(
       `INSERT INTO transaction_logs
          (transaction_id, action, owner_id, outlet_id, outlet_name, customer_name, service_name, quantity, total_amount, status, actor_type, notes)
        VALUES ($1, 'created', $2, $3, $4, $5, $6, $7, $8, 'diterima', 'kasir', $9)`,
       [
-        insertedId, String(req.userId), String(outletId),
-        outletName, customerName, service.name, effectiveQty, total_amount,
+        tx.id, String(req.userId), String(outletId),
+        outletResult.rows[0]?.name ?? null,
+        customerResult.rows[0]?.name ?? null,
+        service.name, effectiveQty, total_amount,
         minQty !== null && qty < minQty ? `Input ${qty}, dihitung dari minimal ${minQty}` : null,
       ]
     ).catch((logErr: Error) => console.warn("[LOG] Gagal simpan log transaksi:", logErr));
 
-    res.status(201).json(toTransactionPayload(tx));
+    res.status(201).json({ ...toTransactionPayload(tx), transaction: tx });
   } catch (err) {
     console.error("[Transactions POST]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// FIX #1a: Tambah log perubahan status ke transaction_logs (route body)
+// BUG FIX: route /status HARUS sebelum /:id agar tidak tertangkap wildcard /:id
 router.put("/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { transactionId, status } = req.body;
   const normalizedStatus = normalizeStatus(status);
@@ -230,24 +230,14 @@ router.put("/status", authenticateToken, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const tx = result.rows[0];
-
-    pool.query(
-      `INSERT INTO transaction_logs
-         (transaction_id, action, owner_id, outlet_id, status, actor_type, notes)
-       VALUES ($1, 'status_changed', $2, $3, $4, 'kasir', $5)`,
-      [tx.id, String(req.userId), tx.outlet_id, normalizedStatus, `Status diubah menjadi ${normalizedStatus}`]
-    ).catch((logErr: Error) => console.warn("[LOG] Gagal simpan log status:", logErr));
-
-    const transaction = toTransactionPayload(tx);
-    res.json({ ...transaction, transaction: tx, message: "Status transaksi berhasil diperbarui" });
+    const transaction = toTransactionPayload(result.rows[0]);
+    res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
   } catch (err) {
     console.error("[Transactions PUT /status]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 });
 
-// FIX #1b: Tambah log perubahan status ke transaction_logs (route param)
 router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { status } = req.body;
@@ -287,17 +277,8 @@ router.put("/:id/status", authenticateToken, async (req: AuthRequest, res: Respo
       return;
     }
 
-    const tx = result.rows[0];
-
-    pool.query(
-      `INSERT INTO transaction_logs
-         (transaction_id, action, owner_id, outlet_id, status, actor_type, notes)
-       VALUES ($1, 'status_changed', $2, $3, $4, 'kasir', $5)`,
-      [parseInt(id), String(req.userId), tx.outlet_id, normalizedStatus, `Status diubah menjadi ${normalizedStatus}`]
-    ).catch((logErr: Error) => console.warn("[LOG] Gagal simpan log status:", logErr));
-
-    const transaction = toTransactionPayload(tx);
-    res.json({ ...transaction, transaction: tx, message: "Status transaksi berhasil diperbarui" });
+    const transaction = toTransactionPayload(result.rows[0]);
+    res.json({ ...transaction, transaction: result.rows[0], message: "Status transaksi berhasil diperbarui" });
   } catch (err) {
     console.error("[Transactions PUT /:id/status]", err);
     res.status(500).json({ message: "Terjadi kesalahan server" });
