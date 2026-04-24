@@ -12,12 +12,13 @@ router.get("/summary", authenticateToken, async (req: AuthRequest, res: Response
     let whereClause: string;
     let params: (string | number)[];
 
+    // BUG FIX: selalu filter dengan owner_id untuk mencegah kebocoran data antar user
     if (queryOutletId) {
-      whereClause = "WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text";
-      params = [String(queryOutletId)];
+      whereClause = "WHERE (t.outlet_id::text = $1::text OR o.client_id::text = $1::text) AND o.owner_id::text = $2::text";
+      params = [String(queryOutletId), String(req.userId)];
     } else if (tokenOutletId) {
-      whereClause = "WHERE t.outlet_id::text = $1::text OR o.client_id::text = $1::text";
-      params = [String(tokenOutletId)];
+      whereClause = "WHERE (t.outlet_id::text = $1::text OR o.client_id::text = $1::text) AND o.owner_id::text = $2::text";
+      params = [String(tokenOutletId), String(req.userId)];
     } else {
       whereClause = "WHERE o.owner_id::text = $1::text";
       params = [String(req.userId)];
@@ -63,12 +64,13 @@ router.get("/daily", authenticateToken, async (req: AuthRequest, res: Response):
     let filterClause: string;
     let params: (string | number)[];
 
+    // BUG FIX: selalu filter dengan owner_id untuk mencegah kebocoran data antar user
     if (queryOutletId) {
-      filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text)";
-      params = [String(queryOutletId)];
+      filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text) AND o.owner_id::text = $2::text";
+      params = [String(queryOutletId), String(req.userId)];
     } else if (tokenOutletId) {
-      filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text)";
-      params = [String(tokenOutletId)];
+      filterClause = "AND (t.outlet_id::text = $1::text OR o.client_id::text = $1::text) AND o.owner_id::text = $2::text";
+      params = [String(tokenOutletId), String(req.userId)];
     } else {
       filterClause = "AND o.owner_id::text = $1::text";
       params = [String(req.userId)];
