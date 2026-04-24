@@ -54,6 +54,16 @@ router.post("/", authenticateToken, async (req: AuthRequest, res: Response): Pro
   }
 
   try {
+    // BUG FIX: validasi outlet milik user yang sedang login
+    const outletCheck = await pool.query(
+      "SELECT id FROM outlets WHERE (id::text = $1::text OR client_id::text = $1::text) AND owner_id::text = $2::text LIMIT 1",
+      [String(effectiveOutletId), String(req.userId)]
+    );
+    if (!outletCheck.rows.length) {
+      res.status(403).json({ message: "Outlet tidak ditemukan atau bukan milik Anda" });
+      return;
+    }
+
     const result = await pool.query(
       `INSERT INTO services (outlet_id, owner_id, name, price, unit, min_quantity)
        VALUES ($1::text, $2::text, $3::text, $4::integer, $5::text, $6)
